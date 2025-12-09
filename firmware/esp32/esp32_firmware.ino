@@ -150,7 +150,7 @@ String buildMetricsJSON() {
   JsonArray scan = wifi.createNestedArray("scan");
   int n = WiFi.scanComplete();
   if (n > 0) {
-    for (int i = 0; i < min(n, 5); i++) {
+    for (int i = 0; i < min(n, (int)5); i++) {
       JsonObject net = scan.createNestedObject();
       net["ssid"] = WiFi.SSID(i);
       net["rssi"] = WiFi.RSSI(i);
@@ -205,7 +205,8 @@ void onAsyncConnect(void* arg, AsyncClient* client) {
 void onAsyncData(void* arg, AsyncClient* client, void* data, size_t len) {
   char* d = (char*)data;
   // Find HTTP status code
-  String response = String(d).substring(0, min((size_t)50, len));
+  size_t maxLen = (len < 50) ? len : 50;
+  String response = String(d).substring(0, maxLen);
   int statusStart = response.indexOf(' ') + 1;
   int statusEnd = response.indexOf(' ', statusStart);
   String status = response.substring(statusStart, statusEnd);
@@ -434,7 +435,10 @@ void handleSave() {
   if (server.hasArg("nodeName")) strncpy(cfg.nodeName, server.arg("nodeName").c_str(), sizeof(cfg.nodeName)-1);
   if (server.hasArg("backendUrl")) strncpy(cfg.backendUrl, server.arg("backendUrl").c_str(), sizeof(cfg.backendUrl)-1);
   if (server.hasArg("deviceToken")) strncpy(cfg.deviceToken, server.arg("deviceToken").c_str(), sizeof(cfg.deviceToken)-1);
-  if (server.hasArg("interval")) cfg.metricsIntervalMs = max(10000, server.arg("interval").toInt());
+  if (server.hasArg("interval")) {
+    long interval = server.arg("interval").toInt();
+    cfg.metricsIntervalMs = (uint32_t)max(10000L, interval);
+  }
   cfg.dhtEnabled = server.hasArg("dhtEnabled") ? 1 : 0;
   saveConfig();
   
@@ -469,7 +473,7 @@ void setup() {
   initMesh();
   initWebServer();
   
-  taskSendMetrics.setInterval(cfg.metricsIntervalMs);
+  taskSendMetrics.setInterval((unsigned long)cfg.metricsIntervalMs);
   taskSendMetrics.enable();
   
   WiFi.scanNetworks(true);
