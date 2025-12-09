@@ -3,6 +3,7 @@
 // Uses painlessMesh task scheduler for safe HTTP calls
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
 #include <EEPROM.h>
