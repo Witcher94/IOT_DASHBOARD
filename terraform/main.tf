@@ -299,7 +299,7 @@ resource "google_compute_backend_service" "backend" {
   name                  = "iot-backend-service"
   protocol              = "HTTP"
   port_name             = "http"
-  timeout_sec           = 30
+  timeout_sec           = 3600  # 1 hour for WebSocket connections
   load_balancing_scheme = "EXTERNAL_MANAGED"
   
   backend {

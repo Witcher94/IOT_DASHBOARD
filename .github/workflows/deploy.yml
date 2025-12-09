@@ -74,6 +74,8 @@ jobs:
             --memory 256Mi \
             --min-instances 0 \
             --max-instances 2 \
+            --timeout 3600 \
+            --session-affinity \
             --cpu-throttling \
             --allow-unauthenticated \
             --quiet
