@@ -1,20 +1,25 @@
-// ===== ESP32 IoT Firmware =====
-// Mesh network + DHT22 + Backend metrics (Bridge Mode)
-// Uses painlessMesh task scheduler for safe HTTP calls
+// ===== ESP32 IoT Firmware v2.2.0 =====
+// Two modes: MESH mode OR BACKEND mode (not both)
+// - MESH mode: participates in mesh network
+// - BACKEND mode: sends metrics to cloud backend
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
 #include <EEPROM.h>
-#include <painlessMesh.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
+
+// Only include mesh if needed
+#ifndef DISABLE_MESH
+#include <painlessMesh.h>
+#endif
 
 // ---------------------------
 // CONFIG
 // ---------------------------
-#define FIRMWARE_VERSION "2.1.0"
+#define FIRMWARE_VERSION "2.2.0"
 #define DHTPIN 15
 #define DHTTYPE DHT22
 #define MESH_PREFIX   "LabMesh"
@@ -24,9 +29,12 @@
 #define CONFIG_MAGIC 0xDEADBEEF
 
 DHT dht(DHTPIN, DHTTYPE);
-painlessMesh mesh;
 WebServer server(80);
-Scheduler userScheduler;
+
+#ifndef DISABLE_MESH
+painlessMesh mesh;
+bool meshRunning = false;
+#endif
 
 // ---------------------------
 // EEPROM STRUCTURE
@@ -40,19 +48,11 @@ struct ConfigData {
   char deviceToken[64];
   uint32_t metricsIntervalMs;
   uint8_t dhtEnabled;
+  uint8_t meshMode;  // 0 = backend mode, 1 = mesh mode
 };
 
 ConfigData cfg;
-bool meshRunning = false;
-bool isRootNode = false;
-
-// Forward declarations
-void sendMetricsTask();
-void readSensorsTask();
-
-// Tasks using mesh scheduler
-Task taskSendMetrics(TASK_SECOND * 30, TASK_FOREVER, &sendMetricsTask, &userScheduler, false);
-Task taskReadSensors(TASK_SECOND * 5, TASK_FOREVER, &readSensorsTask, &userScheduler, true);
+unsigned long lastPush = 0;
 
 // ---------------------------
 // HELPERS
@@ -77,6 +77,7 @@ void loadConfig() {
     strcpy(cfg.nodeName, "ESP32-Node");
     cfg.metricsIntervalMs = 30000;
     cfg.dhtEnabled = 1;
+    cfg.meshMode = 0; // Default to backend mode
     saveConfig();
   }
 }
@@ -92,7 +93,7 @@ void saveConfig() {
 float lastTemp = 0, lastHum = 0;
 int lastRssi = 0;
 
-void readSensorsTask() {
+void readSensors() {
   if (cfg.dhtEnabled) {
     float t = dht.readTemperature();
     float h = dht.readHumidity();
@@ -122,7 +123,7 @@ String buildMetricsJSON() {
   JsonObject wifi = doc.createNestedObject("wifi");
   wifi["rssi"] = lastRssi;
   
-  // WiFi scan
+  // WiFi scan results
   JsonArray scan = wifi.createNestedArray("scan");
   int n = WiFi.scanComplete();
   if (n > 0) {
@@ -137,21 +138,23 @@ String buildMetricsJSON() {
     WiFi.scanDelete();
   }
   if (n != WIFI_SCAN_RUNNING) {
-    WiFi.scanNetworks(true); // Start async scan
+    WiFi.scanNetworks(true);
   }
   
   JsonObject meshObj = doc.createNestedObject("mesh_status");
+#ifndef DISABLE_MESH
   meshObj["enabled"] = meshRunning;
   if (meshRunning) {
-    meshObj["node_id"] = mesh.getNodeId();
-    meshObj["is_root"] = isRootNode;
     auto nodes = mesh.getNodeList();
     JsonArray nodesArr = meshObj.createNestedArray("nodes");
-    for (auto &n : nodes) {
+    for (auto &nodeId : nodes) {
       JsonObject node = nodesArr.createNestedObject();
-      node["node_id"] = n;
+      node["node_id"] = nodeId;
     }
   }
+#else
+  meshObj["enabled"] = false;
+#endif
   
   doc["dht_enabled"] = cfg.dhtEnabled ? true : false;
   
@@ -161,105 +164,106 @@ String buildMetricsJSON() {
 }
 
 // ---------------------------
-// BACKEND COMMUNICATION (via mesh scheduler - safe!)
+// BACKEND MODE: HTTP Push
 // ---------------------------
-void sendMetricsTask() {
+void pushMetricsToBackend() {
   if (strlen(cfg.backendUrl) < 5 || strlen(cfg.deviceToken) < 5) return;
-  if (!isRootNode && meshRunning) {
-    // Only root node sends to backend in mesh mode
-    Serial.println("[METRICS] Not root node, skipping backend push");
-    return;
-  }
+  if (WiFi.status() != WL_CONNECTED) return;
   
-  Serial.println("[METRICS] Sending to backend...");
+  Serial.println("[BACKEND] Pushing metrics...");
   
-  // Use WiFiClient for HTTP (not HTTPS) or WiFiClientSecure for HTTPS
   HTTPClient http;
   String url = String(cfg.backendUrl) + "/api/v1/metrics";
   
-  // For HTTPS, we need to handle it differently
   if (String(cfg.backendUrl).startsWith("https")) {
-    // Use insecure mode for simplicity
     WiFiClientSecure *client = new WiFiClientSecure;
     client->setInsecure();
     http.begin(*client, url);
   } else {
-    http.begin(url);
+    WiFiClient client;
+    http.begin(client, url);
   }
   
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Token", cfg.deviceToken);
-  http.setTimeout(10000);
+  http.setTimeout(15000);
   
   String payload = buildMetricsJSON();
   int code = http.POST(payload);
   
   if (code > 0) {
-    Serial.printf("[METRICS] Response: %d\n", code);
+    Serial.printf("[BACKEND] Response: %d\n", code);
   } else {
-    Serial.printf("[METRICS] Error: %s\n", http.errorToString(code).c_str());
+    Serial.printf("[BACKEND] Error: %s\n", http.errorToString(code).c_str());
   }
   
   http.end();
 }
 
 // ---------------------------
-// MESH CALLBACKS
+// MESH MODE
 // ---------------------------
+#ifndef DISABLE_MESH
 void meshReceived(uint32_t from, String &msg) {
   Serial.printf("[MESH] From %u: %s\n", from, msg.c_str());
-  
-  // If we're root and received data from another node, forward to backend
-  if (isRootNode) {
-    // Could aggregate and forward metrics from child nodes here
-  }
 }
 
 void meshNewConnection(uint32_t nodeId) {
-  Serial.printf("[MESH] New connection: %u\n", nodeId);
+  Serial.printf("[MESH] New node: %u\n", nodeId);
 }
 
 void meshChangedConnections() {
-  Serial.println("[MESH] Topology changed");
-  
-  // Check if we're the root (connected to external WiFi)
-  if (WiFi.status() == WL_CONNECTED && WiFi.localIP()[0] != 0) {
-    isRootNode = true;
-    Serial.println("[MESH] This node is ROOT (gateway)");
-  }
-}
-
-void meshNodeTimeAdjusted(int32_t offset) {
-  // Time sync callback
+  Serial.printf("[MESH] Topology changed. Nodes: %d\n", mesh.getNodeList().size());
 }
 
 void initMesh() {
-  // Use WIFI_AP_STA for bridge mode
-  mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);
-  
-  // Init mesh with external scheduler
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 6);
-  
-  // Set callbacks
+  mesh.setDebugMsgTypes(ERROR | STARTUP);
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
   mesh.onReceive(&meshReceived);
   mesh.onNewConnection(&meshNewConnection);
   mesh.onChangedConnections(&meshChangedConnections);
-  mesh.onNodeTimeAdjusted(&meshNodeTimeAdjusted);
-  
-  // Connect to external WiFi (bridge mode)
-  if (strlen(cfg.ssid) > 0) {
-    mesh.stationManual(cfg.ssid, cfg.password);
-    Serial.printf("[MESH] Bridge mode: connecting to %s\n", cfg.ssid);
-  }
-  
-  // Set this node as root if it has external WiFi config
-  if (strlen(cfg.ssid) > 0) {
-    mesh.setRoot(true);
-    mesh.setContainsRoot(true);
-  }
-  
   meshRunning = true;
-  Serial.println("[MESH] Initialized in bridge mode");
+  Serial.println("[MESH] Started");
+}
+
+void broadcastToMesh() {
+  if (!meshRunning) return;
+  String msg = buildMetricsJSON();
+  mesh.sendBroadcast(msg);
+  Serial.println("[MESH] Broadcast sent");
+}
+#endif
+
+// ---------------------------
+// WIFI (for Backend mode)
+// ---------------------------
+void connectWiFi() {
+  if (strlen(cfg.ssid) == 0) {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("ESP32-Config", "12345678");
+    Serial.print("[WIFI] AP Mode, IP: ");
+    Serial.println(WiFi.softAPIP());
+    return;
+  }
+  
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfg.ssid, cfg.password);
+  Serial.printf("[WIFI] Connecting to %s", cfg.ssid);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WIFI] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("\n[WIFI] Failed, starting AP");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("ESP32-Config", "12345678");
+  }
 }
 
 // ---------------------------
@@ -271,77 +275,115 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32 Config</title>
+  <title>ESP32 IoT Config</title>
   <style>
-    body{font-family:Arial;background:#1a1a2e;color:#eee;padding:20px;max-width:600px;margin:0 auto}
-    .card{background:#16213e;padding:20px;border-radius:10px;margin:10px 0}
-    input{width:100%;padding:10px;margin:5px 0;border-radius:5px;border:none;box-sizing:border-box;background:#0f3460;color:#eee}
-    button{background:#e94560;color:white;padding:12px 24px;border:none;border-radius:5px;cursor:pointer;margin:5px 0;width:100%}
-    button:hover{background:#ff6b6b}
-    h1{color:#e94560;text-align:center}
-    h3{color:#0ea5e9;margin-top:20px}
-    label{display:block;margin-top:10px;color:#aaa;font-size:14px}
-    .status{padding:15px;background:#0f3460;border-radius:8px;margin:15px 0;font-size:14px;line-height:1.8}
-    .status b{color:#e94560}
-    .badge{display:inline-block;padding:3px 8px;border-radius:4px;font-size:12px;margin-left:5px}
-    .online{background:#22c55e33;color:#22c55e}
-    .offline{background:#ef444433;color:#ef4444}
-    .checkbox-label{display:flex;align-items:center;gap:10px;margin:10px 0}
-    .checkbox-label input{width:auto}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#eee;padding:20px;margin:0;min-height:100vh}
+    .container{max-width:500px;margin:0 auto}
+    h1{color:#e94560;text-align:center;margin-bottom:5px}
+    .subtitle{text-align:center;color:#888;margin-bottom:20px;font-size:14px}
+    .card{background:rgba(22,33,62,0.8);backdrop-filter:blur(10px);padding:20px;border-radius:12px;margin:15px 0;border:1px solid rgba(255,255,255,0.1)}
+    input,select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:none;background:#0f3460;color:#eee;font-size:14px}
+    input:focus,select:focus{outline:2px solid #e94560}
+    button{background:linear-gradient(135deg,#e94560,#ff6b6b);color:white;padding:14px;border:none;border-radius:8px;cursor:pointer;width:100%;font-size:16px;font-weight:bold;margin-top:10px}
+    button:hover{transform:translateY(-2px);box-shadow:0 5px 20px rgba(233,69,96,0.4)}
+    button:active{transform:translateY(0)}
+    h3{color:#0ea5e9;margin:20px 0 10px;font-size:16px}
+    label{display:block;color:#aaa;font-size:13px;margin-top:12px}
+    .status{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px}
+    .status-item{background:#0f3460;padding:10px;border-radius:6px}
+    .status-item b{color:#e94560;display:block;font-size:11px;margin-bottom:3px}
+    .mode-selector{display:flex;gap:10px;margin:10px 0}
+    .mode-btn{flex:1;padding:15px;border-radius:8px;border:2px solid #333;background:#0f3460;cursor:pointer;text-align:center;transition:all 0.3s}
+    .mode-btn.active{border-color:#e94560;background:#e9456020}
+    .mode-btn h4{margin:0 0 5px;color:#fff}
+    .mode-btn p{margin:0;font-size:11px;color:#888}
+    .checkbox-row{display:flex;align-items:center;gap:10px;margin:15px 0}
+    .checkbox-row input{width:auto}
+    .badge{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px}
+    .badge.online{background:#22c55e33;color:#22c55e}
+    .badge.offline{background:#ef444433;color:#ef4444}
+    .hidden{display:none}
   </style>
 </head>
 <body>
-  <h1>🌐 ESP32 IoT</h1>
-  
-  <div class="status">
-    <b>Chip ID:</b> %CHIP_ID%<br>
-    <b>IP:</b> %IP%<br>
-    <b>Mesh:</b> %MESH_STATUS%<br>
-    <b>Temperature:</b> %TEMP%°C | <b>Humidity:</b> %HUM%%<br>
-    <b>Free Heap:</b> %HEAP% bytes
+  <div class="container">
+    <h1>🌐 ESP32 IoT</h1>
+    <p class="subtitle">v%VERSION% • %CHIP_ID%</p>
+    
+    <div class="status">
+      <div class="status-item"><b>IP</b>%IP%</div>
+      <div class="status-item"><b>MODE</b>%MODE%</div>
+      <div class="status-item"><b>TEMP</b>%TEMP%°C</div>
+      <div class="status-item"><b>HUMIDITY</b>%HUM%%</div>
+    </div>
+    
+    <div class="card">
+      <form action="/save" method="POST">
+        <h3>⚡ Operation Mode</h3>
+        <div class="mode-selector">
+          <div class="mode-btn %BACKEND_ACTIVE%" onclick="setMode(0)">
+            <h4>☁️ Backend</h4>
+            <p>Send to cloud</p>
+          </div>
+          <div class="mode-btn %MESH_ACTIVE%" onclick="setMode(1)">
+            <h4>🕸️ Mesh</h4>
+            <p>Local network</p>
+          </div>
+        </div>
+        <input type="hidden" name="meshMode" id="meshMode" value="%MESH_MODE%">
+        
+        <div id="wifiSection">
+          <h3>📶 WiFi</h3>
+          <label>SSID</label>
+          <input name="ssid" value="%SSID%" placeholder="Your WiFi network">
+          <label>Password</label>
+          <input name="password" type="password" value="%PASS%">
+        </div>
+        
+        <div id="backendSection" class="%BACKEND_SECTION%">
+          <h3>☁️ Backend</h3>
+          <label>URL</label>
+          <input name="backendUrl" value="%BACKEND%" placeholder="https://your-domain.com">
+          <label>Device Token</label>
+          <input name="deviceToken" value="%TOKEN%">
+          <label>Push Interval (ms)</label>
+          <input name="interval" type="number" value="%INTERVAL%" min="5000">
+        </div>
+        
+        <h3>🔧 Device</h3>
+        <label>Name</label>
+        <input name="nodeName" value="%NODE%">
+        
+        <div class="checkbox-row">
+          <input type="checkbox" name="dhtEnabled" id="dht" %DHT_CHK%>
+          <label for="dht" style="margin:0;color:#eee">Enable DHT22 sensor</label>
+        </div>
+        
+        <button type="submit">💾 Save & Reboot</button>
+      </form>
+    </div>
+    
+    <div class="card">
+      <button onclick="location.href='/metrics'" style="background:#0ea5e9">📊 View Live Data (JSON)</button>
+    </div>
   </div>
   
-  <div class="card">
-    <form action="/save" method="POST">
-      <h3>📶 WiFi (Bridge)</h3>
-      <label>SSID (зовнішня мережа)</label>
-      <input name="ssid" value="%SSID%" placeholder="Your WiFi SSID">
-      <label>Password</label>
-      <input name="password" type="password" value="%PASS%">
-      
-      <h3>🔧 Device</h3>
-      <label>Node Name</label>
-      <input name="nodeName" value="%NODE%">
-      
-      <h3>☁️ Backend</h3>
-      <label>URL (https://your-domain.com)</label>
-      <input name="backendUrl" value="%BACKEND%" placeholder="https://chnu-iot.com">
-      <label>Device Token</label>
-      <input name="deviceToken" value="%TOKEN%" placeholder="your-device-token">
-      <label>Push Interval (ms)</label>
-      <input name="interval" type="number" value="%INTERVAL%" min="5000">
-      
-      <h3>⚙️ Options</h3>
-      <div class="checkbox-label">
-        <input type="checkbox" name="dhtEnabled" id="dht" %DHT_CHK%>
-        <label for="dht" style="margin:0">Enable DHT22 Sensor</label>
-      </div>
-      
-      <br>
-      <button type="submit">💾 Save & Reboot</button>
-    </form>
-  </div>
-  
-  <div class="card">
-    <h3>📊 Live Data</h3>
-    <button onclick="location.href='/metrics'">View JSON Metrics</button>
-    <button onclick="location.href='/scan'">Scan WiFi Networks</button>
-  </div>
+  <script>
+    function setMode(mode) {
+      document.getElementById('meshMode').value = mode;
+      document.querySelectorAll('.mode-btn').forEach((el, i) => {
+        el.classList.toggle('active', i === mode);
+      });
+      document.getElementById('backendSection').classList.toggle('hidden', mode === 1);
+    }
+  </script>
 </body>
 </html>
 )rawliteral";
 
 String processTemplate(String html) {
+  html.replace("%VERSION%", FIRMWARE_VERSION);
   html.replace("%CHIP_ID%", getChipId());
   html.replace("%IP%", WiFi.localIP().toString());
   html.replace("%SSID%", cfg.ssid);
@@ -353,14 +395,11 @@ String processTemplate(String html) {
   html.replace("%DHT_CHK%", cfg.dhtEnabled ? "checked" : "");
   html.replace("%TEMP%", String(lastTemp, 1));
   html.replace("%HUM%", String(lastHum, 1));
-  html.replace("%HEAP%", String(ESP.getFreeHeap()));
-  
-  String meshStatus = meshRunning ? 
-    (isRootNode ? "<span class='badge online'>ROOT</span>" : "<span class='badge online'>NODE</span>") :
-    "<span class='badge offline'>OFF</span>";
-  meshStatus += " Nodes: " + String(meshRunning ? mesh.getNodeList().size() + 1 : 0);
-  html.replace("%MESH_STATUS%", meshStatus);
-  
+  html.replace("%MESH_MODE%", String(cfg.meshMode));
+  html.replace("%MODE%", cfg.meshMode ? "<span class='badge online'>MESH</span>" : "<span class='badge online'>BACKEND</span>");
+  html.replace("%BACKEND_ACTIVE%", cfg.meshMode == 0 ? "active" : "");
+  html.replace("%MESH_ACTIVE%", cfg.meshMode == 1 ? "active" : "");
+  html.replace("%BACKEND_SECTION%", cfg.meshMode == 1 ? "hidden" : "");
   return html;
 }
 
@@ -374,15 +413,13 @@ void handleSave() {
   if (server.hasArg("nodeName")) strncpy(cfg.nodeName, server.arg("nodeName").c_str(), sizeof(cfg.nodeName)-1);
   if (server.hasArg("backendUrl")) strncpy(cfg.backendUrl, server.arg("backendUrl").c_str(), sizeof(cfg.backendUrl)-1);
   if (server.hasArg("deviceToken")) strncpy(cfg.deviceToken, server.arg("deviceToken").c_str(), sizeof(cfg.deviceToken)-1);
-  if (server.hasArg("interval")) {
-    uint32_t interval = server.arg("interval").toInt();
-    cfg.metricsIntervalMs = max(5000UL, (unsigned long)interval);
-  }
+  if (server.hasArg("interval")) cfg.metricsIntervalMs = max(5000, server.arg("interval").toInt());
+  if (server.hasArg("meshMode")) cfg.meshMode = server.arg("meshMode").toInt();
   cfg.dhtEnabled = server.hasArg("dhtEnabled") ? 1 : 0;
   
   saveConfig();
-  server.send(200, "text/html", "<html><body style='background:#1a1a2e;color:#eee;text-align:center;padding:50px'><h1>✅ Saved!</h1><p>Rebooting...</p></body></html>");
-  delay(1000);
+  server.send(200, "text/html", R"(<html><body style='background:#1a1a2e;color:#eee;display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui'><div style='text-align:center'><h1>✅ Saved!</h1><p>Rebooting in 2 seconds...</p></div></body></html>)");
+  delay(2000);
   ESP.restart();
 }
 
@@ -390,33 +427,12 @@ void handleMetrics() {
   server.send(200, "application/json", buildMetricsJSON());
 }
 
-void handleScan() {
-  String json = "[";
-  int n = WiFi.scanComplete();
-  if (n == WIFI_SCAN_FAILED) {
-    WiFi.scanNetworks(true);
-    server.send(200, "application/json", "{\"status\":\"scanning\"}");
-    return;
-  }
-  if (n > 0) {
-    for (int i = 0; i < n; i++) {
-      if (i > 0) json += ",";
-      json += "{\"ssid\":\"" + WiFi.SSID(i) + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
-    }
-    WiFi.scanDelete();
-    WiFi.scanNetworks(true);
-  }
-  json += "]";
-  server.send(200, "application/json", json);
-}
-
 void initWebServer() {
   server.on("/", handleRoot);
   server.on("/save", HTTP_POST, handleSave);
   server.on("/metrics", handleMetrics);
-  server.on("/scan", handleScan);
   server.begin();
-  Serial.println("[WEB] Server started");
+  Serial.println("[WEB] Server ready");
 }
 
 // ---------------------------
@@ -425,37 +441,53 @@ void initWebServer() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n=== ESP32 IoT v" FIRMWARE_VERSION " ===");
-  Serial.println("Bridge Mode with Mesh Network");
+  Serial.printf("\n=== ESP32 IoT v%s ===\n", FIRMWARE_VERSION);
   
   loadConfig();
   if (cfg.dhtEnabled) dht.begin();
   
-  // Initialize mesh (handles WiFi internally)
-  initMesh();
-  
-  // Start web server
-  initWebServer();
-  
-  // Configure and enable metrics task
-  if (cfg.metricsIntervalMs > 0) {
-    taskSendMetrics.setInterval(cfg.metricsIntervalMs);
-    taskSendMetrics.enable();
+  if (cfg.meshMode == 1) {
+    // MESH MODE
+    Serial.println("[MODE] Mesh Network");
+#ifndef DISABLE_MESH
+    initMesh();
+#endif
+  } else {
+    // BACKEND MODE
+    Serial.println("[MODE] Backend (Cloud)");
+    connectWiFi();
   }
   
-  // Start initial WiFi scan
+  initWebServer();
   WiFi.scanNetworks(true);
   
-  Serial.println("[READY] Setup complete");
+  Serial.println("[READY]");
 }
 
 void loop() {
-  // Mesh handles WiFi and calls scheduler internally
-  mesh.update();
-  
-  // Handle web requests
   server.handleClient();
   
-  // Small yield to prevent watchdog
-  yield();
+  static unsigned long lastRead = 0;
+  if (millis() - lastRead > 5000) {
+    readSensors();
+    lastRead = millis();
+  }
+  
+  if (cfg.meshMode == 1) {
+    // MESH MODE
+#ifndef DISABLE_MESH
+    mesh.update();
+    
+    if (millis() - lastPush > cfg.metricsIntervalMs) {
+      broadcastToMesh();
+      lastPush = millis();
+    }
+#endif
+  } else {
+    // BACKEND MODE
+    if (millis() - lastPush > cfg.metricsIntervalMs) {
+      pushMetricsToBackend();
+      lastPush = millis();
+    }
+  }
 }
