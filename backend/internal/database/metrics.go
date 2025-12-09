@@ -133,6 +133,32 @@ func (db *DB) GetAvgHumidity(ctx context.Context) (float64, error) {
 	return avg, err
 }
 
+func (db *DB) GetAvgTemperatureByUser(ctx context.Context, userID uuid.UUID) (float64, error) {
+	var avg float64
+	query := `
+		SELECT COALESCE(AVG(m.temperature), 0) FROM metrics m
+		JOIN devices d ON m.device_id = d.id
+		WHERE d.user_id = $1
+		AND m.temperature IS NOT NULL
+		AND m.created_at > NOW() - INTERVAL '1 hour'
+	`
+	err := db.Pool.QueryRow(ctx, query, userID).Scan(&avg)
+	return avg, err
+}
+
+func (db *DB) GetAvgHumidityByUser(ctx context.Context, userID uuid.UUID) (float64, error) {
+	var avg float64
+	query := `
+		SELECT COALESCE(AVG(m.humidity), 0) FROM metrics m
+		JOIN devices d ON m.device_id = d.id
+		WHERE d.user_id = $1
+		AND m.humidity IS NOT NULL
+		AND m.created_at > NOW() - INTERVAL '1 hour'
+	`
+	err := db.Pool.QueryRow(ctx, query, userID).Scan(&avg)
+	return avg, err
+}
+
 func (db *DB) DeleteOldMetrics(ctx context.Context, olderThan time.Duration) error {
 	query := `DELETE FROM metrics WHERE created_at < $1`
 	_, err := db.Pool.Exec(ctx, query, time.Now().Add(-olderThan))
