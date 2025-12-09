@@ -66,7 +66,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(cfg, db, authService)
 	deviceHandler := handlers.NewDeviceHandler(db, deviceService, hub, alertingService)
 	dashboardHandler := handlers.NewDashboardHandler(db)
-	wsHandler := handlers.NewWebSocketHandler(hub)
+	wsHandler := handlers.NewWebSocketHandler(hub, cfg)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -132,9 +132,10 @@ func main() {
 				admin.GET("/devices", deviceHandler.GetDevices)
 			}
 
-			// WebSocket
-			protected.GET("/ws", wsHandler.HandleWebSocket)
 		}
+
+		// WebSocket (token via query param, not middleware)
+		v1.GET("/ws", wsHandler.HandleWebSocket)
 
 		// ESP Device routes (token auth)
 		esp := v1.Group("")

@@ -12,15 +12,14 @@ export function useWebSocket(onMessage: MessageHandler) {
   const connect = useCallback(() => {
     if (!isAuthenticated || !token) return;
 
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/v1/ws`;
+    // Token via query parameter (WebSocket can't use Authorization header)
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/v1/ws?token=${encodeURIComponent(token)}`;
     
     try {
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
         console.log('WebSocket connected');
-        // Send auth token
-        ws.send(JSON.stringify({ type: 'auth', token }));
       };
 
       ws.onmessage = (event) => {
