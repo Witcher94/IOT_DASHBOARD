@@ -49,20 +49,19 @@ jobs:
       - name: Build and Push
         id: build
         working-directory: backend
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend
+          SHA: ${{ steps.sha.outputs.short }}
         run: |
-          IMAGE=${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend
-          
           docker build \
             --platform linux/amd64 \
             -t $IMAGE:latest \
-            -t $IMAGE:sha-${{ steps.sha.outputs.short }} \
-            -t $IMAGE:${{ github.run_number }} \
+            -t $IMAGE:sha-$SHA \
             .
           
-          docker push $IMAGE:latest
-          docker push $IMAGE:sha-${{ steps.sha.outputs.short }}
+          docker push $IMAGE --all-tags
           
-          echo "image=$IMAGE:sha-${{ steps.sha.outputs.short }}" >> $GITHUB_OUTPUT
+          echo "image=$IMAGE:sha-$SHA" >> $GITHUB_OUTPUT
 
   build-frontend:
     name: Build Frontend
@@ -96,35 +95,22 @@ jobs:
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       
-      - name: Debug secrets
-        run: |
-          echo "Project ID length: ${#GCP_PROJECT_ID}"
-          echo "Registry: ${{ env.REGISTRY }}"
-        env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      
       - name: Build and Push
         id: build
         working-directory: frontend
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend
+          SHA: ${{ steps.sha.outputs.short }}
         run: |
-          if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then
-            echo "ERROR: GCP_PROJECT_ID is empty!"
-            exit 1
-          fi
-          
-          IMAGE=${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend
-          echo "Building image: $IMAGE"
-          
           docker build \
             --platform linux/amd64 \
             -t $IMAGE:latest \
-            -t $IMAGE:sha-${{ steps.sha.outputs.short }} \
+            -t $IMAGE:sha-$SHA \
             .
           
-          docker push $IMAGE:latest
-          docker push $IMAGE:sha-${{ steps.sha.outputs.short }}
+          docker push $IMAGE --all-tags
           
-          echo "image=$IMAGE:sha-${{ steps.sha.outputs.short }}" >> $GITHUB_OUTPUT
+          echo "image=$IMAGE:sha-$SHA" >> $GITHUB_OUTPUT
 
   deploy:
     name: Deploy to Cloud Run
