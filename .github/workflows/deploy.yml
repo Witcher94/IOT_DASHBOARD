@@ -61,7 +61,6 @@ jobs:
           
           docker push $IMAGE:latest
           docker push $IMAGE:sha-${{ steps.sha.outputs.short }}
-          docker push $IMAGE:${{ github.run_number }}
           
           echo "image=$IMAGE:sha-${{ steps.sha.outputs.short }}" >> $GITHUB_OUTPUT
 
@@ -107,7 +106,6 @@ jobs:
             --platform linux/amd64 \
             -t $IMAGE:latest \
             -t $IMAGE:sha-${{ steps.sha.outputs.short }} \
-            -t $IMAGE:${{ github.run_number }} \
             .
           
           docker push $IMAGE:latest
