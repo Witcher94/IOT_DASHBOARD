@@ -23,8 +23,8 @@
 #define EEPROM_SIZE   512
 #define CONFIG_MAGIC  0xDEADBEEF
 
-#define HTTP_TIMEOUT_MS 5000
-#define MESH_RESTART_DELAY_MS 500
+#define HTTP_TIMEOUT_MS 2000
+#define MESH_RESTART_DELAY_MS 200
 
 DHT dht(DHTPIN, DHTTYPE);
 painlessMesh mesh;
@@ -180,7 +180,7 @@ void stopMesh() {
 }
 
 // ---------------------------
-// HTTP PUSH (while mesh is stopped)
+// HTTP PUSH (fire-and-forget, while mesh is stopped)
 // ---------------------------
 void pushToBackend() {
   if (strlen(cfg.backendUrl) < 5 || strlen(cfg.deviceToken) < 5) {
@@ -188,59 +188,62 @@ void pushToBackend() {
     return;
   }
   
-  // Connect to WiFi
+  // Connect to WiFi (with shorter timeout)
   Serial.printf("[HTTP] Connecting to %s...\n", cfg.ssid);
   WiFi.mode(WIFI_STA);
   WiFi.begin(cfg.ssid, cfg.password);
   
   unsigned long startTime = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < 10000) {
-    delay(100);
-    Serial.print(".");
+  while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < 5000) {
+    delay(50);
   }
   
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\n[HTTP] WiFi connect failed");
+    Serial.println("[HTTP] WiFi failed");
     WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
     return;
   }
-  Serial.printf("\n[HTTP] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("[HTTP] IP: %s\n", WiFi.localIP().toString().c_str());
   
-  // Build URL
+  // Build request
   String url = String(cfg.backendUrl) + "/api/v1/metrics";
   String payload = buildMetricsJSON();
   
-  Serial.printf("[HTTP] POST %s\n", url.c_str());
+  Serial.println("[HTTP] Sending (fire-and-forget)...");
   
   HTTPClient http;
+  WiFiClient* client;
+  WiFiClientSecure* secClient = nullptr;
   
   if (String(cfg.backendUrl).startsWith("https")) {
-    WiFiClientSecure *client = new WiFiClientSecure;
-    client->setInsecure(); // Skip cert verification
-    http.begin(*client, url);
+    secClient = new WiFiClientSecure;
+    secClient->setInsecure();
+    secClient->setTimeout(2); // 2 second timeout
+    http.begin(*secClient, url);
+    client = secClient;
   } else {
-    WiFiClient client;
-    http.begin(client, url);
+    client = new WiFiClient;
+    client->setTimeout(2);
+    http.begin(*client, url);
   }
   
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Token", cfg.deviceToken);
-  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(2000); // 2 second timeout - fire and forget
   
+  // Fire and forget - just send, don't care about response
   int httpCode = http.POST(payload);
-  
-  if (httpCode > 0) {
-    Serial.printf("[HTTP] Response: %d\n", httpCode);
-  } else {
-    Serial.printf("[HTTP] Error: %s\n", http.errorToString(httpCode).c_str());
-  }
+  Serial.printf("[HTTP] Sent, code: %d\n", httpCode);
   
   http.end();
   
-  // Disconnect WiFi before restarting mesh
+  // Cleanup
+  if (secClient) delete secClient;
+  else delete client;
+  
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  delay(100);
   
   Serial.println("[HTTP] Done");
 }
@@ -338,8 +341,8 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       <input name="backendUrl" value="%BACKEND%" placeholder="https://chnu-iot.com">
       <label>Device Token</label>
       <input name="deviceToken" value="%TOKEN%">
-      <label>Push Interval (ms, min 15000)</label>
-      <input name="interval" type="number" value="%INTERVAL%" min="15000">
+      <label>Push Interval (ms, min 30000)</label>
+      <input name="interval" type="number" value="%INTERVAL%" min="30000">
       
       <h3>⚙️ Device</h3>
       <label>Name</label>
@@ -395,7 +398,7 @@ void handleSave() {
   if (server.hasArg("deviceToken")) strncpy(cfg.deviceToken, server.arg("deviceToken").c_str(), sizeof(cfg.deviceToken)-1);
   if (server.hasArg("interval")) {
     long val = atol(server.arg("interval").c_str());
-    cfg.metricsIntervalMs = (uint32_t)(val < 15000 ? 15000 : val);
+    cfg.metricsIntervalMs = (uint32_t)(val < 30000 ? 30000 : val);
   }
   cfg.dhtEnabled = server.hasArg("dhtEnabled") ? 1 : 0;
   saveConfig();
