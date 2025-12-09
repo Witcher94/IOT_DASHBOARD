@@ -1,0 +1,13 @@
+allContacts:
+  email: pavlo.fakas@gmail.com
+  phoneNumber: "+380504359940"
+  postalAddress:
+    regionCode: UA
+    postalCode: "58012"
+    administrativeArea: "Chernivtsi Oblast"
+    locality: "Chernivtsi"
+    addressLines:
+      - "Kotsyubynskoho St, 2"
+    recipients:
+      - "Pavlo Fakas"
+

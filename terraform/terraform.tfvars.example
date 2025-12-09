@@ -1,0 +1,40 @@
+# ==========================================
+# Terraform Variables
+# Copy to terraform.tfvars and fill in!
+# ==========================================
+
+# GCP Project ID
+project_id = "your-gcp-project-id"
+
+# Region (europe-west1 = Belgium, cheap)
+region = "europe-west1"
+
+# 🌐 Your domain (must own it!)
+# Example: iot.mydomain.com
+domain = "iot.yourdomain.com"
+
+# Google OAuth credentials
+google_client_id     = "123456789-xxxxx.apps.googleusercontent.com"
+google_client_secret = "GOCSPX-xxxxx"
+
+# Admin email
+admin_email = "pavlo.fakas@gmail.com"
+
+# JWT Secret (generate random 32+ chars)
+jwt_secret = "your-super-secret-jwt-key-32chars-minimum"
+
+# Database password (strong!)
+db_password = "super-secure-db-password-123!"
+
+# GitHub repository (owner/repo format)
+github_repo = "pfaka/diploma"
+
+# ==========================================
+# DNS Settings
+# ==========================================
+
+# Cloud DNS zone name (alphanumeric and dashes only)
+dns_zone_name = "iot-zone"
+
+# Create DNS zone? Set to false if zone already exists
+create_dns_zone = true
