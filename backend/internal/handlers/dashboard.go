@@ -22,7 +22,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	isAdmin, _ := c.Get("is_admin")
 
-	var totalDevices, onlineDevices int
+	var totalDevices, onlineDevices int64
 	var avgTemp, avgHumidity float64
 
 	if isAdmin.(bool) {

@@ -166,26 +166,26 @@ func (db *DB) DeleteDevice(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (db *DB) GetDevicesCount(ctx context.Context) (int, error) {
-	var count int
+func (db *DB) GetDevicesCount(ctx context.Context) (int64, error) {
+	var count int64
 	err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM devices").Scan(&count)
 	return count, err
 }
 
-func (db *DB) GetOnlineDevicesCount(ctx context.Context) (int, error) {
-	var count int
+func (db *DB) GetOnlineDevicesCount(ctx context.Context) (int64, error) {
+	var count int64
 	err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM devices WHERE is_online = true").Scan(&count)
 	return count, err
 }
 
-func (db *DB) GetDevicesCountByUser(ctx context.Context, userID uuid.UUID) (int, error) {
-	var count int
+func (db *DB) GetDevicesCountByUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var count int64
 	err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM devices WHERE user_id = $1", userID).Scan(&count)
 	return count, err
 }
 
-func (db *DB) GetOnlineDevicesCountByUser(ctx context.Context, userID uuid.UUID) (int, error) {
-	var count int
+func (db *DB) GetOnlineDevicesCountByUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var count int64
 	err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM devices WHERE user_id = $1 AND is_online = true", userID).Scan(&count)
 	return count, err
 }
