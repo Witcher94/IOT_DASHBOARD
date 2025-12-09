@@ -66,6 +66,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(cfg, db, authService)
 	deviceHandler := handlers.NewDeviceHandler(db, deviceService, hub, alertingService)
 	dashboardHandler := handlers.NewDashboardHandler(db)
+	adminHandler := handlers.NewAdminHandler(db)
 	wsHandler := handlers.NewWebSocketHandler(hub)
 
 	// Setup Gin router
@@ -128,7 +129,10 @@ func main() {
 			admin := protected.Group("/admin")
 			admin.Use(middleware.AdminMiddleware())
 			{
-				admin.GET("/users", dashboardHandler.GetAllUsers)
+				admin.GET("/users", adminHandler.GetAllUsers)
+				admin.DELETE("/users/:id", adminHandler.DeleteUser)
+				admin.PUT("/users/:id/role", adminHandler.UpdateUserRole)
+				admin.GET("/users/:id/devices", adminHandler.GetUserDevices)
 				admin.GET("/devices", deviceHandler.GetDevices)
 			}
 

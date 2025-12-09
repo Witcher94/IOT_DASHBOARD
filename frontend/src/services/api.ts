@@ -138,7 +138,21 @@ export const adminApi = {
   },
   
   getAllDevices: async (): Promise<Device[]> => {
-    const { data } = await api.get('/devices', { params: { all: true } });
+    const { data } = await api.get('/admin/devices');
+    return data || [];
+  },
+  
+  deleteUser: async (id: string): Promise<void> => {
+    await api.delete(`/admin/users/${id}`);
+  },
+  
+  updateUserRole: async (id: string, isAdmin: boolean): Promise<User> => {
+    const { data } = await api.put(`/admin/users/${id}/role`, { is_admin: isAdmin });
+    return data;
+  },
+  
+  getUserDevices: async (userId: string): Promise<Device[]> => {
+    const { data } = await api.get(`/admin/users/${userId}/devices`);
     return data || [];
   },
 };

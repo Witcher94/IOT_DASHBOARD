@@ -123,3 +123,27 @@ func (db *DB) GetUsersCount(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+func (db *DB) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	// First delete user's devices and their metrics
+	_, err := db.Pool.Exec(ctx, `
+		DELETE FROM metrics WHERE device_id IN (SELECT id FROM devices WHERE user_id = $1)
+	`, id)
+	if err != nil {
+		return err
+	}
+	
+	_, err = db.Pool.Exec(ctx, "DELETE FROM devices WHERE user_id = $1", id)
+	if err != nil {
+		return err
+	}
+	
+	_, err = db.Pool.Exec(ctx, "DELETE FROM users WHERE id = $1", id)
+	return err
+}
+
+func (db *DB) SetUserAdmin(ctx context.Context, id uuid.UUID, isAdmin bool) error {
+	query := `UPDATE users SET is_admin = $2, updated_at = NOW() WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, id, isAdmin)
+	return err
+}
+
