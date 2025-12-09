@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# 1. Перезаписуємо ~/.ssh/config
+cat <<SSHCONFIG > ~/.ssh/config
+Host github-personal
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_rsa_personal
+  IdentitiesOnly yes
+
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_rsa_personal
+  IdentitiesOnly yes
+SSHCONFIG
+
+# 2. Ставимо права 600
+chmod 600 ~/.ssh/config
+
+# 3. Змінюємо email та ім'я у глобальному git config
+git config --global user.email "pavlo.fakas@gmail.com"
+git config --global user.name "Pavlo Fakas"
+
+echo "✅ Налаштування для Personal застосовано."
+echo "   Email: pavlo.fakas@gmail.com"
+echo "   SSH Key: ~/.ssh/id_rsa_personal"

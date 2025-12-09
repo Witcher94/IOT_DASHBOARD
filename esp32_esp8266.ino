@@ -682,6 +682,10 @@ void handleDashboard() {
 // ---------------------------
 // OTA UPDATE
 // ---------------------------
+#ifndef LED_BUILTIN
+  #define LED_BUILTIN 2
+#endif
+
 void performOTAUpdate(String firmwareUrl) {
   Serial.println("[OTA] Starting update from: " + firmwareUrl);
 
