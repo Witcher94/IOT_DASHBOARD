@@ -7,6 +7,7 @@
 // ---------------------------
 #if defined(ESP32)
   #include <WiFi.h>
+  #include <WiFiClientSecure.h>
   #include <WebServer.h>
   #include <HTTPClient.h>
   #include <base64.h>
@@ -15,6 +16,7 @@
   WebServer server(80);
 #elif defined(ESP8266)
   #include <ESP8266WiFi.h>
+  #include <WiFiClientSecure.h>
   #include <ESP8266WebServer.h>
   #include <ESP8266HTTPClient.h>
   #include <base64.h>
@@ -735,12 +737,19 @@ void pushMetricsToBackend() {
     return;
   }
 
-  WiFiClient client;
   HTTPClient http;
-
   String url = String(cfg.backendUrl) + "/api/v1/metrics";
-
-  http.begin(client, url);
+  
+  // HTTPS support
+  if (String(cfg.backendUrl).startsWith("https")) {
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure(); // Skip certificate verification
+    http.begin(secureClient, url);
+  } else {
+    WiFiClient client;
+    http.begin(client, url);
+  }
+  
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Token", cfg.deviceToken);
 
@@ -767,12 +776,19 @@ void checkForCommands() {
     return;
   }
 
-  WiFiClient client;
   HTTPClient http;
-
   String url = String(cfg.backendUrl) + "/api/v1/devices/commands";
 
-  http.begin(client, url);
+  // HTTPS support
+  if (String(cfg.backendUrl).startsWith("https")) {
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure();
+    http.begin(secureClient, url);
+  } else {
+    WiFiClient client;
+    http.begin(client, url);
+  }
+  
   http.addHeader("X-Device-Token", cfg.deviceToken);
 
   int httpCode = http.GET();
@@ -842,12 +858,19 @@ void checkForCommands() {
 void acknowledgeCommand(String commandId, String status) {
   if (commandId.length() == 0) return;
 
-  WiFiClient client;
   HTTPClient http;
-
   String url = String(cfg.backendUrl) + "/api/v1/devices/commands/" + commandId + "/ack";
 
-  http.begin(client, url);
+  // HTTPS support
+  if (String(cfg.backendUrl).startsWith("https")) {
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure();
+    http.begin(secureClient, url);
+  } else {
+    WiFiClient client;
+    http.begin(client, url);
+  }
+  
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Token", cfg.deviceToken);
 
