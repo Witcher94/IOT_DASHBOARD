@@ -96,11 +96,24 @@ jobs:
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       
+      - name: Debug secrets
+        run: |
+          echo "Project ID length: ${#GCP_PROJECT_ID}"
+          echo "Registry: ${{ env.REGISTRY }}"
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      
       - name: Build and Push
         id: build
         working-directory: frontend
         run: |
+          if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then
+            echo "ERROR: GCP_PROJECT_ID is empty!"
+            exit 1
+          fi
+          
           IMAGE=${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend
+          echo "Building image: $IMAGE"
           
           docker build \
             --platform linux/amd64 \
@@ -110,7 +123,6 @@ jobs:
           
           docker push $IMAGE:latest
           docker push $IMAGE:sha-${{ steps.sha.outputs.short }}
-          docker push $IMAGE:${{ github.run_number }}
           
           echo "image=$IMAGE:sha-${{ steps.sha.outputs.short }}" >> $GITHUB_OUTPUT
 
