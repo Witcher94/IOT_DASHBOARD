@@ -17,6 +17,7 @@ import {
   Check,
   Bell,
   BellOff,
+  X,
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -83,6 +84,17 @@ export default function DeviceDetail() {
     },
     onError: () => {
       toast.error('Failed to send command');
+    },
+  });
+
+  const cancelCommandMutation = useMutation({
+    mutationFn: (commandId: string) => commandsApi.cancel(id!, commandId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['commands', id] });
+      toast.success('Command cancelled');
+    },
+    onError: () => {
+      toast.error('Failed to cancel command');
     },
   });
 
@@ -363,13 +375,25 @@ export default function DeviceDetail() {
             <h3 className="text-sm font-medium text-dark-400 mb-3">{t.recentCommands}</h3>
             <div className="space-y-2 max-h-32 overflow-auto">
               {commands?.slice(0, 5).map((cmd) => (
-                <div key={cmd.id} className="flex items-center justify-between text-sm">
-                  <span className="font-mono text-dark-300">{cmd.command}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${
-                    cmd.status === 'acknowledged' ? 'bg-green-500/20 text-green-400' :
-                    cmd.status === 'sent' ? 'bg-yellow-500/20 text-yellow-400' :
-                    'bg-dark-600 text-dark-400'
-                  }`}>{cmd.status}</span>
+                <div key={cmd.id} className="flex items-center justify-between text-sm gap-2">
+                  <span className="font-mono text-dark-300 flex-1">{cmd.command}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      cmd.status === 'acknowledged' ? 'bg-green-500/20 text-green-400' :
+                      cmd.status === 'sent' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-dark-600 text-dark-400'
+                    }`}>{cmd.status}</span>
+                    {cmd.status === 'pending' && (
+                      <button
+                        onClick={() => cancelCommandMutation.mutate(cmd.id)}
+                        disabled={cancelCommandMutation.isPending}
+                        className="p-1 rounded hover:bg-red-500/20 text-red-400 transition-colors"
+                        title="Cancel command"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               )) || <p className="text-dark-500 text-sm">{t.noDevicesFound}</p>}
             </div>

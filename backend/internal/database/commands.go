@@ -76,6 +76,22 @@ func (db *DB) GetCommandsByDeviceID(ctx context.Context, deviceID uuid.UUID, lim
 	return commands, nil
 }
 
+func (db *DB) GetCommandByID(ctx context.Context, id uuid.UUID) (*models.Command, error) {
+	query := `
+		SELECT id, device_id, command, params, status, created_at, sent_at, acked_at
+		FROM commands WHERE id = $1
+	`
+	cmd := &models.Command{}
+	err := db.Pool.QueryRow(ctx, query, id).Scan(
+		&cmd.ID, &cmd.DeviceID, &cmd.Command, &cmd.Params,
+		&cmd.Status, &cmd.CreatedAt, &cmd.SentAt, &cmd.AckedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
 func (db *DB) DeleteCommand(ctx context.Context, id uuid.UUID) error {
 	_, err := db.Pool.Exec(ctx, "DELETE FROM commands WHERE id = $1", id)
 	return err

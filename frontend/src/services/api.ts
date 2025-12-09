@@ -120,6 +120,10 @@ export const commandsApi = {
     const { data } = await api.post(`/devices/${deviceId}/commands`, req);
     return data;
   },
+  
+  cancel: async (deviceId: string, commandId: string): Promise<void> => {
+    await api.delete(`/devices/${deviceId}/commands/${commandId}`);
+  },
 };
 
 // Dashboard

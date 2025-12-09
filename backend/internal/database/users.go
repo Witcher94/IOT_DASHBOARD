@@ -131,12 +131,12 @@ func (db *DB) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = db.Pool.Exec(ctx, "DELETE FROM devices WHERE user_id = $1", id)
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = db.Pool.Exec(ctx, "DELETE FROM users WHERE id = $1", id)
 	return err
 }
@@ -146,4 +146,3 @@ func (db *DB) SetUserAdmin(ctx context.Context, id uuid.UUID, isAdmin bool) erro
 	_, err := db.Pool.Exec(ctx, query, id, isAdmin)
 	return err
 }
-

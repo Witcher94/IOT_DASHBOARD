@@ -244,6 +244,49 @@ func (h *DeviceHandler) CreateCommand(c *gin.Context) {
 	c.JSON(http.StatusCreated, cmd)
 }
 
+func (h *DeviceHandler) CancelCommand(c *gin.Context) {
+	commandID, err := uuid.Parse(c.Param("commandId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid command ID"})
+		return
+	}
+
+	// Get command to check ownership
+	cmd, err := h.db.GetCommandByID(c.Request.Context(), commandID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Command not found"})
+		return
+	}
+
+	// Only pending commands can be cancelled
+	if cmd.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only pending commands can be cancelled"})
+		return
+	}
+
+	// Get device to check ownership
+	device, err := h.deviceService.GetDevice(c.Request.Context(), cmd.DeviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Check ownership
+	userID, _ := c.Get("user_id")
+	isAdmin, _ := c.Get("is_admin")
+	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	if err := h.db.DeleteCommand(c.Request.Context(), commandID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Command cancelled"})
+}
+
 func (h *DeviceHandler) GetCommands(c *gin.Context) {
 	deviceID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

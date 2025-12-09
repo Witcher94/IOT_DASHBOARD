@@ -116,6 +116,7 @@ func main() {
 				devices.GET("/:id/metrics", deviceHandler.GetMetrics)
 				devices.POST("/:id/commands", deviceHandler.CreateCommand)
 				devices.GET("/:id/commands", deviceHandler.GetCommands)
+				devices.DELETE("/:id/commands/:commandId", deviceHandler.CancelCommand)
 				devices.PUT("/:id/alerts", deviceHandler.UpdateAlertSettings)
 			}
 
