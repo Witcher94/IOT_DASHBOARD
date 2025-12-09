@@ -8,29 +8,21 @@ on:
 env:
   GCP_REGION: europe-west1
   REGISTRY: europe-west1-docker.pkg.dev
-  BACKEND_SERVICE: iot-backend
-  FRONTEND_SERVICE: iot-frontend
-  CLOUD_SQL_INSTANCE: iot-dashboard-db
-  CLOUDRUN_SA: iot-cloudrun-sa
 
 jobs:
-  build-backend:
+  build-and-deploy:
+    name: Build & Deploy
     environment: iot-dev
-    name: Build Backend
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    
-    outputs:
-      image: ${{ steps.build.outputs.image }}
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       
       - name: Authenticate to Google Cloud
-        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
@@ -42,105 +34,36 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
       
-      - name: Get short SHA
-        id: sha
-        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-      
-      - name: Build and Push
-        id: build
+      - name: Build Backend
         working-directory: backend
-        env:
-          IMAGE: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend
-          SHA: ${{ steps.sha.outputs.short }}
         run: |
           docker build \
             --platform linux/amd64 \
-            -t $IMAGE:latest \
-            -t $IMAGE:sha-$SHA \
+            -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend:latest \
+            -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend:${{ github.sha }} \
             .
-          
-          docker push $IMAGE --all-tags
-          
-          echo "image=$IMAGE:sha-$SHA" >> $GITHUB_OUTPUT
-
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-    environment: iot-dev
-    permissions:
-      contents: read
-      id-token: write
-    
-    outputs:
-      image: ${{ steps.build.outputs.image }}
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          docker push ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend --all-tags
       
-      - name: Authenticate to Google Cloud
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-      
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
-      
-      - name: Get short SHA
-        id: sha
-        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-      
-      - name: Build and Push
-        id: build
+      - name: Build Frontend
         working-directory: frontend
-        env:
-          IMAGE: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend
-          SHA: ${{ steps.sha.outputs.short }}
         run: |
           docker build \
             --platform linux/amd64 \
-            -t $IMAGE:latest \
-            -t $IMAGE:sha-$SHA \
+            -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend:latest \
+            -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend:${{ github.sha }} \
             .
-          
-          docker push $IMAGE --all-tags
-          
-          echo "image=$IMAGE:sha-$SHA" >> $GITHUB_OUTPUT
-
-  deploy:
-    name: Deploy to Cloud Run
-    environment: iot-dev
-    needs: [build-backend, build-frontend]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    
-    steps:
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+          docker push ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend --all-tags
       
       - name: Deploy Backend
         run: |
-          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
-            --image ${{ needs.build-backend.outputs.image }} \
+          gcloud run deploy iot-backend \
+            --image ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/backend:${{ github.sha }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --service-account ${{ env.CLOUDRUN_SA }}@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
-            --add-cloudsql-instances ${{ secrets.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:${{ env.CLOUD_SQL_INSTANCE }} \
+            --service-account iot-cloudrun-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+            --add-cloudsql-instances ${{ secrets.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:iot-dashboard-db \
             --set-env-vars "PORT=8080" \
-            --set-env-vars "DATABASE_URL=postgres://iot_user:${{ secrets.DB_PASSWORD }}@/iot_dashboard?host=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:${{ env.CLOUD_SQL_INSTANCE }}" \
+            --set-env-vars "DATABASE_URL=postgres://iot_user:${{ secrets.DB_PASSWORD }}@/iot_dashboard?host=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:iot-dashboard-db" \
             --set-env-vars "ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars "FRONTEND_URL=https://${{ secrets.DOMAIN }}" \
             --set-env-vars "GOOGLE_CALLBACK_URL=https://${{ secrets.DOMAIN }}/api/v1/auth/google/callback" \
@@ -158,8 +81,8 @@ jobs:
       
       - name: Deploy Frontend
         run: |
-          gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
-            --image ${{ needs.build-frontend.outputs.image }} \
+          gcloud run deploy iot-frontend \
+            --image ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/iot-dashboard/frontend:${{ github.sha }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
             --ingress internal-and-cloud-load-balancing \
@@ -175,7 +98,5 @@ jobs:
         run: |
           echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Backend:** ${{ needs.build-backend.outputs.image }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Frontend:** ${{ needs.build-frontend.outputs.image }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "🌐 **URL:** https://${{ secrets.DOMAIN }}" >> $GITHUB_STEP_SUMMARY
