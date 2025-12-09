@@ -17,7 +17,7 @@
 #define DHTPIN 15
 #define DHTTYPE DHT22
 #define EEPROM_SIZE 512
-#define CONFIG_MAGIC 0xABCD1234
+#define CONFIG_MAGIC 0xABCD1236  // Changed again - struct size changed
 
 DHT dht(DHTPIN, DHTTYPE);
 WebServer server(80);
@@ -31,7 +31,7 @@ struct ConfigData {
   char password[64];
   char nodeName[32];
   char backendUrl[128];
-  char deviceToken[64];
+  char deviceToken[72];  // Token is 64 chars + null
   uint32_t intervalSec;
   uint8_t dhtEnabled;
 };
@@ -152,6 +152,7 @@ void connectWiFi() {
 void pushMetrics() {
   if (strlen(cfg.backendUrl) < 5 || strlen(cfg.deviceToken) < 5) {
     Serial.println("[HTTP] Not configured");
+    Serial.printf("[HTTP] URL len: %d, Token len: %d\n", strlen(cfg.backendUrl), strlen(cfg.deviceToken));
     return;
   }
   
@@ -163,8 +164,15 @@ void pushMetrics() {
   String url = String(cfg.backendUrl) + "/api/v1/metrics";
   String payload = buildJSON();
   
-  Serial.print("[HTTP] POST ");
+  Serial.println("==== HTTP DEBUG ====");
+  Serial.print("URL: ");
   Serial.println(url);
+  Serial.print("Token: [");
+  Serial.print(cfg.deviceToken);
+  Serial.println("]");
+  Serial.print("Token length: ");
+  Serial.println(strlen(cfg.deviceToken));
+  Serial.println("====================");
   
   HTTPClient http;
   
@@ -184,6 +192,10 @@ void pushMetrics() {
   int code = http.POST(payload);
   Serial.print("[HTTP] Response: ");
   Serial.println(code);
+  
+  if (code == 401) {
+    Serial.println("[HTTP] 401 = Invalid token! Check token in web UI");
+  }
   
   http.end();
 }
@@ -278,7 +290,7 @@ void handleSave() {
   if (server.hasArg("ssid")) strncpy(cfg.ssid, server.arg("ssid").c_str(), 31);
   if (server.hasArg("pass")) strncpy(cfg.password, server.arg("pass").c_str(), 63);
   if (server.hasArg("url")) strncpy(cfg.backendUrl, server.arg("url").c_str(), 127);
-  if (server.hasArg("token")) strncpy(cfg.deviceToken, server.arg("token").c_str(), 63);
+  if (server.hasArg("token")) strncpy(cfg.deviceToken, server.arg("token").c_str(), 71);
   if (server.hasArg("name")) strncpy(cfg.nodeName, server.arg("name").c_str(), 31);
   if (server.hasArg("interval")) {
     int v = server.arg("interval").toInt();
