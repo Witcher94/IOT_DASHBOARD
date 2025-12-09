@@ -10,7 +10,8 @@ import type {
   CreateCommandRequest,
 } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
+// В production API на тому ж домені через LB path routing
+const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/v1`;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -78,6 +79,16 @@ export const devicesApi = {
   
   regenerateToken: async (id: string): Promise<{ token: string }> => {
     const { data } = await api.post(`/devices/${id}/regenerate-token`);
+    return data;
+  },
+  
+  updateAlertSettings: async (id: string, settings: {
+    alerts_enabled?: boolean;
+    alert_temp_min?: number;
+    alert_temp_max?: number;
+    alert_humidity_max?: number;
+  }): Promise<Device> => {
+    const { data } = await api.put(`/devices/${id}/alerts`, settings);
     return data;
   },
 };

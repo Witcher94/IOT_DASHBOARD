@@ -4,9 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Cpu, Search, X, Copy, Check, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { devicesApi } from '../services/api';
+import { useTranslation } from '../contexts/settingsStore';
 import DeviceCard from '../components/DeviceCard';
 
 export default function Devices() {
+  const t = useTranslation();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newDeviceName, setNewDeviceName] = useState('');
   const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
@@ -24,10 +26,10 @@ export default function Devices() {
     onSuccess: (device) => {
       setNewDeviceToken(device.token);
       queryClient.invalidateQueries({ queryKey: ['devices'] });
-      toast.success('Device created successfully!');
+      toast.success(t.deviceCreated);
     },
     onError: () => {
-      toast.error('Failed to create device');
+      toast.error(t.error);
     },
   });
 
@@ -35,10 +37,10 @@ export default function Devices() {
     mutationFn: devicesApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
-      toast.success('Device deleted');
+      toast.success(t.delete);
     },
     onError: () => {
-      toast.error('Failed to delete device');
+      toast.error(t.error);
     },
   });
 
@@ -59,7 +61,7 @@ export default function Devices() {
     if (newDeviceToken) {
       navigator.clipboard.writeText(newDeviceToken);
       setCopiedToken(true);
-      toast.success('Token copied to clipboard!');
+      toast.success(t.copyToken);
       setTimeout(() => setCopiedToken(false), 3000);
     }
   };
@@ -80,10 +82,10 @@ export default function Devices() {
       >
         <div>
           <h1 className="text-3xl font-bold mb-2">
-            <span className="gradient-text">Devices</span>
+            <span className="gradient-text">{t.devices}</span>
           </h1>
           <p className="text-dark-400">
-            Manage your ESP32/ESP8266 devices
+            {t.manageDevices}
           </p>
         </div>
         <button
@@ -91,7 +93,7 @@ export default function Devices() {
           className="btn-primary flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
-          Add Device
+          {t.addDevice}
         </button>
       </motion.div>
 
@@ -105,7 +107,7 @@ export default function Devices() {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
         <input
           type="text"
-          placeholder="Search devices by name, chip ID, or MAC..."
+          placeholder={t.searchDevices}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="input-field pl-12"
@@ -131,7 +133,7 @@ export default function Devices() {
                 isOnline={device.is_online}
                 showActions
                 onDelete={() => {
-                  if (confirm('Are you sure you want to delete this device?')) {
+                  if (confirm(t.confirm + '?')) {
                     deleteMutation.mutate(device.id);
                   }
                 }}
@@ -141,9 +143,9 @@ export default function Devices() {
           {filteredDevices?.length === 0 && (
             <div className="col-span-full text-center py-20">
               <Cpu className="w-16 h-16 text-dark-500 mx-auto mb-4" />
-              <p className="text-xl text-dark-300 mb-2">No devices found</p>
+              <p className="text-xl text-dark-300 mb-2">{t.noDevicesFound}</p>
               <p className="text-dark-500">
-                {search ? 'Try a different search term' : 'Add your first device to get started'}
+                {search ? t.searchDevices : t.addFirstDevice}
               </p>
             </div>
           )}
@@ -169,7 +171,7 @@ export default function Devices() {
             >
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold">
-                  {newDeviceToken ? 'Device Created!' : 'Add New Device'}
+                  {newDeviceToken ? t.deviceCreated : t.addDevice}
                 </h2>
                 <button
                   onClick={handleCloseModal}
@@ -182,7 +184,7 @@ export default function Devices() {
               {!newDeviceToken ? (
                 <>
                   <div className="mb-6">
-                    <label className="block text-sm text-dark-400 mb-2">Device Name</label>
+                    <label className="block text-sm text-dark-400 mb-2">{t.devices}</label>
                     <input
                       type="text"
                       placeholder="Living Room Sensor"
@@ -194,7 +196,7 @@ export default function Devices() {
                   </div>
                   <div className="flex gap-3">
                     <button onClick={handleCloseModal} className="btn-secondary flex-1">
-                      Cancel
+                      {t.cancel}
                     </button>
                     <button
                       onClick={handleCreate}
@@ -202,7 +204,7 @@ export default function Devices() {
                       className="btn-primary flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {createMutation.isPending && <RefreshCw className="w-4 h-4 animate-spin" />}
-                      Create Device
+                      {t.addDevice}
                     </button>
                   </div>
                 </>
@@ -210,8 +212,7 @@ export default function Devices() {
                 <>
                   <div className="mb-6">
                     <p className="text-dark-300 mb-4">
-                      Copy this token and paste it into your ESP device configuration. 
-                      You won't be able to see it again!
+                      {t.tokenWarning}
                     </p>
                     <div className="relative">
                       <input
@@ -234,11 +235,11 @@ export default function Devices() {
                   </div>
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-6">
                     <p className="text-sm text-amber-200">
-                      ⚠️ Make sure to copy the token now. For security reasons, it won't be shown again.
+                      ⚠️ {t.tokenWarning}
                     </p>
                   </div>
                   <button onClick={handleCloseModal} className="btn-primary w-full">
-                    Done
+                    {t.done}
                   </button>
                 </>
               )}
@@ -249,4 +250,3 @@ export default function Devices() {
     </div>
   );
 }
-

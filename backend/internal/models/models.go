@@ -8,14 +8,15 @@ import (
 
 // User представляє користувача системи
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Picture   string    `json:"picture,omitempty"`
-	GoogleID  string    `json:"-"`
-	IsAdmin   bool      `json:"is_admin"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                    uuid.UUID `json:"id"`
+	Email                 string    `json:"email"`
+	Name                  string    `json:"name"`
+	Picture               string    `json:"picture,omitempty"`
+	GoogleID              string    `json:"-"`
+	IsAdmin               bool      `json:"is_admin"`
+	NotificationChannelID string    `json:"-"` // GCP Monitoring channel
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 // Device представляє IoT пристрій
@@ -24,16 +25,22 @@ type Device struct {
 	UserID       uuid.UUID  `json:"user_id"`
 	Name         string     `json:"name"`
 	Token        string     `json:"token,omitempty"`
-	ChipID       string     `json:"chip_id,omitempty"`
-	MAC          string     `json:"mac,omitempty"`
-	Platform     string     `json:"platform,omitempty"`
-	Firmware     string     `json:"firmware,omitempty"`
+	ChipID       *string    `json:"chip_id,omitempty"`
+	MAC          *string    `json:"mac,omitempty"`
+	Platform     *string    `json:"platform,omitempty"`
+	Firmware     *string    `json:"firmware,omitempty"`
 	IsOnline     bool       `json:"is_online"`
 	LastSeen     *time.Time `json:"last_seen,omitempty"`
 	DHTEnabled   bool       `json:"dht_enabled"`
 	MeshEnabled  bool       `json:"mesh_enabled"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	// Alert settings
+	AlertsEnabled    bool     `json:"alerts_enabled"`
+	AlertTempMin     *float64 `json:"alert_temp_min,omitempty"`
+	AlertTempMax     *float64 `json:"alert_temp_max,omitempty"`
+	AlertHumidityMax *float64 `json:"alert_humidity_max,omitempty"`
+	AlertPolicyID   string   `json:"-"` // Internal, not exposed to API
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // Metric представляє метрики з пристрою
@@ -130,6 +137,14 @@ type DeviceCommand struct {
 // CreateDeviceRequest запит на створення пристрою
 type CreateDeviceRequest struct {
 	Name string `json:"name" binding:"required"`
+}
+
+// UpdateAlertSettingsRequest запит на оновлення налаштувань алертів
+type UpdateAlertSettingsRequest struct {
+	AlertsEnabled    *bool    `json:"alerts_enabled"`
+	AlertTempMin     *float64 `json:"alert_temp_min"`
+	AlertTempMax     *float64 `json:"alert_temp_max"`
+	AlertHumidityMax *float64 `json:"alert_humidity_max"`
 }
 
 // CreateCommandRequest запит на створення команди

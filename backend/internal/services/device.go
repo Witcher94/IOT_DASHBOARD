@@ -64,10 +64,10 @@ func (s *DeviceService) DeleteDevice(ctx context.Context, deviceID uuid.UUID) er
 func (s *DeviceService) UpdateDeviceFromMetrics(ctx context.Context, device *models.Device, payload *models.DeviceMetricsPayload) error {
 	now := time.Now()
 
-	device.ChipID = payload.System.ChipID
-	device.MAC = payload.System.MAC
-	device.Platform = payload.System.Platform
-	device.Firmware = payload.System.Firmware
+	device.ChipID = &payload.System.ChipID
+	device.MAC = &payload.System.MAC
+	device.Platform = &payload.System.Platform
+	device.Firmware = &payload.System.Firmware
 	device.IsOnline = true
 	device.LastSeen = &now
 	device.DHTEnabled = payload.DHTEnabled

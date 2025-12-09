@@ -99,6 +99,14 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token)`,
 		`CREATE INDEX IF NOT EXISTS idx_commands_device_id ON commands(device_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_commands_status ON commands(status)`,
+		// Alert settings
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS alert_temp_min DECIMAL(5,2)`,
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS alert_temp_max DECIMAL(5,2) DEFAULT 40`,
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS alert_humidity_max DECIMAL(5,2) DEFAULT 90`,
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS alert_policy_id VARCHAR(255)`,
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT TRUE`,
+		// Notification channel per user
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_channel_id VARCHAR(255)`,
 	}
 
 	for _, migration := range migrations {

@@ -22,7 +22,9 @@ func (db *DB) CreateDevice(ctx context.Context, device *models.Device) error {
 func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, error) {
 	query := `
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
-			   is_online, last_seen, dht_enabled, mesh_enabled, created_at, updated_at
+			   is_online, last_seen, dht_enabled, mesh_enabled,
+			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   created_at, updated_at
 		FROM devices WHERE id = $1
 	`
 	device := &models.Device{}
@@ -30,6 +32,7 @@ func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, 
 		&device.ID, &device.UserID, &device.Name, &device.Token,
 		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
+		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 		&device.CreatedAt, &device.UpdatedAt,
 	)
 	if err != nil {
@@ -41,7 +44,9 @@ func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, 
 func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Device, error) {
 	query := `
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
-			   is_online, last_seen, dht_enabled, mesh_enabled, created_at, updated_at
+			   is_online, last_seen, dht_enabled, mesh_enabled,
+			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   created_at, updated_at
 		FROM devices WHERE token = $1
 	`
 	device := &models.Device{}
@@ -49,6 +54,7 @@ func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Devic
 		&device.ID, &device.UserID, &device.Name, &device.Token,
 		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
+		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 		&device.CreatedAt, &device.UpdatedAt,
 	)
 	if err != nil {
@@ -60,7 +66,9 @@ func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Devic
 func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]models.Device, error) {
 	query := `
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
-			   is_online, last_seen, dht_enabled, mesh_enabled, created_at, updated_at
+			   is_online, last_seen, dht_enabled, mesh_enabled,
+			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   created_at, updated_at
 		FROM devices WHERE user_id = $1 ORDER BY created_at DESC
 	`
 	rows, err := db.Pool.Query(ctx, query, userID)
@@ -76,6 +84,7 @@ func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]model
 			&device.ID, &device.UserID, &device.Name, &device.Token,
 			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
+			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 			&device.CreatedAt, &device.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -88,7 +97,9 @@ func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]model
 func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 	query := `
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
-			   is_online, last_seen, dht_enabled, mesh_enabled, created_at, updated_at
+			   is_online, last_seen, dht_enabled, mesh_enabled,
+			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   created_at, updated_at
 		FROM devices ORDER BY created_at DESC
 	`
 	rows, err := db.Pool.Query(ctx, query)
@@ -104,6 +115,7 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 			&device.ID, &device.UserID, &device.Name, &device.Token,
 			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
+			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 			&device.CreatedAt, &device.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -111,6 +123,20 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 		devices = append(devices, device)
 	}
 	return devices, nil
+}
+
+func (db *DB) UpdateAlertSettings(ctx context.Context, deviceID uuid.UUID, req *models.UpdateAlertSettingsRequest) error {
+	query := `
+		UPDATE devices SET
+			alerts_enabled = COALESCE($2, alerts_enabled),
+			alert_temp_min = COALESCE($3, alert_temp_min),
+			alert_temp_max = COALESCE($4, alert_temp_max),
+			alert_humidity_max = COALESCE($5, alert_humidity_max),
+			updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := db.Pool.Exec(ctx, query, deviceID, req.AlertsEnabled, req.AlertTempMin, req.AlertTempMax, req.AlertHumidityMax)
+	return err
 }
 
 func (db *DB) UpdateDevice(ctx context.Context, device *models.Device) error {

@@ -15,6 +15,8 @@ import {
   Send,
   Copy,
   Check,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -32,6 +34,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { devicesApi, metricsApi, commandsApi } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useTranslation } from '../contexts/settingsStore';
 import type { WebSocketMessage, Metric } from '../types';
 
 ChartJS.register(
@@ -46,6 +49,7 @@ ChartJS.register(
 );
 
 export default function DeviceDetail() {
+  const t = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -93,8 +97,21 @@ export default function DeviceDetail() {
   const deleteMutation = useMutation({
     mutationFn: () => devicesApi.delete(id!),
     onSuccess: () => {
-      toast.success('Device deleted');
+      toast.success(t.delete);
       navigate('/devices');
+    },
+  });
+
+  const updateAlertsMutation = useMutation({
+    mutationFn: (settings: {
+      alerts_enabled?: boolean;
+      alert_temp_min?: number;
+      alert_temp_max?: number;
+      alert_humidity_max?: number;
+    }) => devicesApi.updateAlertSettings(id!, settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device', id] });
+      toast.success('Alert settings saved!');
     },
   });
 
@@ -111,7 +128,7 @@ export default function DeviceDetail() {
     if (device?.token) {
       navigator.clipboard.writeText(device.token);
       setCopiedToken(true);
-      toast.success('Token copied!');
+      toast.success(t.copyToken);
       setTimeout(() => setCopiedToken(false), 3000);
     }
   };
@@ -127,7 +144,7 @@ export default function DeviceDetail() {
   if (!device) {
     return (
       <div className="p-8 text-center">
-        <p className="text-dark-400">Device not found</p>
+        <p className="text-dark-400">{t.noDevicesFound}</p>
       </div>
     );
   }
@@ -138,7 +155,7 @@ export default function DeviceDetail() {
     labels: metrics?.map((m: Metric) => format(new Date(m.created_at), 'HH:mm')) || [],
     datasets: [
       {
-        label: 'Temperature (°C)',
+        label: `${t.temperature} (°C)`,
         data: metrics?.map((m: Metric) => m.temperature) || [],
         borderColor: '#f97316',
         backgroundColor: 'rgba(249, 115, 22, 0.1)',
@@ -146,7 +163,7 @@ export default function DeviceDetail() {
         tension: 0.4,
       },
       {
-        label: 'Humidity (%)',
+        label: `${t.humidity} (%)`,
         data: metrics?.map((m: Metric) => m.humidity) || [],
         borderColor: '#06b6d4',
         backgroundColor: 'rgba(6, 182, 212, 0.1)',
@@ -185,9 +202,9 @@ export default function DeviceDetail() {
   ];
 
   const quickCommands = [
-    { command: 'reboot', label: 'Reboot', icon: Power },
-    { command: 'toggle_dht', label: 'Toggle DHT', icon: Thermometer },
-    { command: 'toggle_mesh', label: 'Toggle Mesh', icon: Wifi },
+    { command: 'reboot', label: t.reboot, icon: Power },
+    { command: 'toggle_dht', label: t.toggleDHT, icon: Thermometer },
+    { command: 'toggle_mesh', label: t.toggleMesh, icon: Wifi },
   ];
 
   return (
@@ -212,7 +229,7 @@ export default function DeviceDetail() {
                 ? 'bg-green-500/20 text-green-400' 
                 : 'bg-red-500/20 text-red-400'
             }`}>
-              {device.is_online ? 'Online' : 'Offline'}
+              {device.is_online ? t.online : 'Offline'}
             </span>
           </div>
           <p className="text-dark-400 text-sm mt-1">
@@ -221,7 +238,7 @@ export default function DeviceDetail() {
         </div>
         <button
           onClick={() => {
-            if (confirm('Delete this device?')) {
+            if (confirm(t.confirm + '?')) {
               deleteMutation.mutate();
             }
           }}
@@ -234,10 +251,10 @@ export default function DeviceDetail() {
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {[
-          { label: 'Temperature', value: latestMetric?.temperature?.toFixed(1) ?? '--', unit: '°C', icon: Thermometer, color: 'text-orange-400' },
-          { label: 'Humidity', value: latestMetric?.humidity?.toFixed(1) ?? '--', unit: '%', icon: Droplets, color: 'text-cyan-400' },
-          { label: 'WiFi Signal', value: latestMetric?.rssi ?? '--', unit: 'dBm', icon: Wifi, color: 'text-purple-400' },
-          { label: 'Free Memory', value: latestMetric?.free_heap ? (latestMetric.free_heap / 1024).toFixed(0) : '--', unit: 'KB', icon: Cpu, color: 'text-green-400' },
+          { label: t.temperature, value: latestMetric?.temperature?.toFixed(1) ?? '--', unit: '°C', icon: Thermometer, color: 'text-orange-400' },
+          { label: t.humidity, value: latestMetric?.humidity?.toFixed(1) ?? '--', unit: '%', icon: Droplets, color: 'text-cyan-400' },
+          { label: t.wifiSignal, value: latestMetric?.rssi ?? '--', unit: 'dBm', icon: Wifi, color: 'text-purple-400' },
+          { label: t.freeMemory, value: latestMetric?.free_heap ? (latestMetric.free_heap / 1024).toFixed(0) : '--', unit: 'KB', icon: Cpu, color: 'text-green-400' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -265,7 +282,7 @@ export default function DeviceDetail() {
         className="glass rounded-2xl p-6 mb-8"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Sensor Data</h2>
+          <h2 className="text-lg font-semibold">{t.sensorData}</h2>
           <div className="flex items-center gap-2">
             {periods.map((p) => (
               <button
@@ -297,7 +314,7 @@ export default function DeviceDetail() {
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Wifi className="w-5 h-5 text-primary-400" />
-            WiFi Networks
+            {t.wifiNetworks}
           </h2>
           <div className="space-y-2 max-h-64 overflow-auto">
             {latestMetric?.wifi_scan?.slice(0, 10).map((network, i) => (
@@ -313,7 +330,7 @@ export default function DeviceDetail() {
                   }`}>{network.rssi} dBm</p>
                 </div>
               </div>
-            )) || <p className="text-dark-500 text-sm">No data</p>}
+            )) || <p className="text-dark-500 text-sm">{t.noDevicesFound}</p>}
           </div>
         </motion.div>
 
@@ -326,7 +343,7 @@ export default function DeviceDetail() {
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Send className="w-5 h-5 text-accent-400" />
-            Quick Commands
+            {t.quickCommands}
           </h2>
           <div className="grid grid-cols-3 gap-3 mb-4">
             {quickCommands.map((cmd) => (
@@ -343,7 +360,7 @@ export default function DeviceDetail() {
           </div>
           
           <div className="pt-4 border-t border-dark-700/50">
-            <h3 className="text-sm font-medium text-dark-400 mb-3">Recent Commands</h3>
+            <h3 className="text-sm font-medium text-dark-400 mb-3">{t.recentCommands}</h3>
             <div className="space-y-2 max-h-32 overflow-auto">
               {commands?.slice(0, 5).map((cmd) => (
                 <div key={cmd.id} className="flex items-center justify-between text-sm">
@@ -354,21 +371,108 @@ export default function DeviceDetail() {
                     'bg-dark-600 text-dark-400'
                   }`}>{cmd.status}</span>
                 </div>
-              )) || <p className="text-dark-500 text-sm">No commands</p>}
+              )) || <p className="text-dark-500 text-sm">{t.noDevicesFound}</p>}
             </div>
           </div>
+        </motion.div>
+
+        {/* Alert Settings */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="glass rounded-2xl p-6"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              {device.alerts_enabled ? (
+                <Bell className="w-5 h-5 text-green-400" />
+              ) : (
+                <BellOff className="w-5 h-5 text-dark-500" />
+              )}
+              Alerts
+            </h2>
+            <button
+              onClick={() => updateAlertsMutation.mutate({ alerts_enabled: !device.alerts_enabled })}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                device.alerts_enabled
+                  ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                  : 'bg-dark-700 text-dark-400 hover:bg-dark-600'
+              }`}
+            >
+              {device.alerts_enabled ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+          
+          {device.alerts_enabled && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm text-dark-400 mb-2">Min Temp (°C)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    defaultValue={device.alert_temp_min ?? ''}
+                    placeholder="0"
+                    className="input-field text-sm"
+                    onBlur={(e) => {
+                      const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                      if (val !== device.alert_temp_min) {
+                        updateAlertsMutation.mutate({ alert_temp_min: val });
+                      }
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-dark-400 mb-2">Max Temp (°C)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    defaultValue={device.alert_temp_max ?? 40}
+                    placeholder="40"
+                    className="input-field text-sm"
+                    onBlur={(e) => {
+                      const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                      if (val !== device.alert_temp_max) {
+                        updateAlertsMutation.mutate({ alert_temp_max: val });
+                      }
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-dark-400 mb-2">Max Humidity (%)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    defaultValue={device.alert_humidity_max ?? 90}
+                    placeholder="90"
+                    className="input-field text-sm"
+                    onBlur={(e) => {
+                      const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                      if (val !== device.alert_humidity_max) {
+                        updateAlertsMutation.mutate({ alert_humidity_max: val });
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-dark-500">
+                Alerts will be logged and can trigger notifications via GCP Cloud Monitoring
+              </p>
+            </div>
+          )}
         </motion.div>
 
         {/* Device Token */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="md:col-span-2 glass rounded-2xl p-6"
+          transition={{ delay: 0.6 }}
+          className="glass rounded-2xl p-6"
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Settings className="w-5 h-5 text-dark-400" />
-            Device Token
+            {t.deviceToken}
           </h2>
           <div className="flex gap-3">
             <div className="relative flex-1">
@@ -387,7 +491,7 @@ export default function DeviceDetail() {
             </div>
             <button
               onClick={() => {
-                if (confirm('Regenerate token? The device will need to be reconfigured.')) {
+                if (confirm(t.confirm + '?')) {
                   regenerateTokenMutation.mutate();
                 }
               }}
@@ -395,7 +499,7 @@ export default function DeviceDetail() {
               className="btn-secondary flex items-center gap-2"
             >
               <RefreshCw className={`w-4 h-4 ${regenerateTokenMutation.isPending ? 'animate-spin' : ''}`} />
-              Regenerate
+              {t.regenerate}
             </button>
           </div>
         </motion.div>
@@ -403,4 +507,3 @@ export default function DeviceDetail() {
     </div>
   );
 }
-

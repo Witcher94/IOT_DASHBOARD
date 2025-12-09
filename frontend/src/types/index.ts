@@ -21,6 +21,11 @@ export interface Device {
   last_seen?: string;
   dht_enabled: boolean;
   mesh_enabled: boolean;
+  // Alert settings
+  alerts_enabled: boolean;
+  alert_temp_min?: number;
+  alert_temp_max?: number;
+  alert_humidity_max?: number;
   created_at: string;
   updated_at: string;
 }

@@ -8,11 +8,16 @@ import {
   User,
   Shield,
   Wifi,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useAuthStore } from '../contexts/authStore';
+import { useSettingsStore, useTranslation } from '../contexts/settingsStore';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
+  const { theme, toggleTheme } = useSettingsStore();
+  const t = useTranslation();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -21,12 +26,13 @@ export default function Layout() {
   };
 
   const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/devices', icon: Cpu, label: 'Devices' },
+    { to: '/', icon: LayoutDashboard, label: t.dashboard },
+    { to: '/devices', icon: Cpu, label: t.devices },
+    { to: '/settings', icon: Settings, label: t.settings },
   ];
 
   if (user?.is_admin) {
-    navItems.push({ to: '/admin', icon: Shield, label: 'Admin' });
+    navItems.push({ to: '/admin', icon: Shield, label: t.admin });
   }
 
   return (
@@ -92,16 +98,19 @@ export default function Layout() {
           </div>
           
           <div className="mt-3 flex gap-2">
-            <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-dark-300 hover:text-white rounded-lg hover:bg-dark-800/50 transition-colors">
-              <Settings className="w-4 h-4" />
-              Settings
+            <button
+              onClick={toggleTheme}
+              className="flex items-center justify-center gap-2 px-3 py-2 text-sm text-dark-300 hover:text-white rounded-lg hover:bg-dark-800/50 transition-colors"
+              title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
             <button
               onClick={handleLogout}
               className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 rounded-lg hover:bg-red-500/10 transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              Logout
+              {t.logout}
             </button>
           </div>
         </div>

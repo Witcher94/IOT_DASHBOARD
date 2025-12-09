@@ -14,16 +14,18 @@ import (
 )
 
 type DeviceHandler struct {
-	db            *database.DB
-	deviceService *services.DeviceService
-	hub           *websocket.Hub
+	db              *database.DB
+	deviceService   *services.DeviceService
+	hub             *websocket.Hub
+	alertingService *services.AlertingService
 }
 
-func NewDeviceHandler(db *database.DB, deviceService *services.DeviceService, hub *websocket.Hub) *DeviceHandler {
+func NewDeviceHandler(db *database.DB, deviceService *services.DeviceService, hub *websocket.Hub, alertingService *services.AlertingService) *DeviceHandler {
 	return &DeviceHandler{
-		db:            db,
-		deviceService: deviceService,
-		hub:           hub,
+		db:              db,
+		deviceService:   deviceService,
+		hub:             hub,
+		alertingService: alertingService,
 	}
 }
 
@@ -52,7 +54,8 @@ func (h *DeviceHandler) GetDevices(c *gin.Context) {
 	var devices []models.Device
 	var err error
 
-	if isAdmin.(bool) && c.Query("all") == "true" {
+	// Адмін бачить всі пристрої, звичайний юзер - тільки свої
+	if isAdmin.(bool) {
 		devices, err = h.db.GetAllDevices(c.Request.Context())
 	} else {
 		devices, err = h.deviceService.GetUserDevices(c.Request.Context(), userID.(uuid.UUID))
@@ -271,6 +274,43 @@ func (h *DeviceHandler) GetCommands(c *gin.Context) {
 	c.JSON(http.StatusOK, commands)
 }
 
+func (h *DeviceHandler) UpdateAlertSettings(c *gin.Context) {
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	device, err := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Check ownership
+	userID, _ := c.Get("user_id")
+	isAdmin, _ := c.Get("is_admin")
+	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	var req models.UpdateAlertSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.db.UpdateAlertSettings(c.Request.Context(), deviceID, &req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Fetch updated device
+	updatedDevice, _ := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+	c.JSON(http.StatusOK, updatedDevice)
+}
+
 // ESP Device Endpoints
 
 func (h *DeviceHandler) ReceiveMetrics(c *gin.Context) {
@@ -286,6 +326,18 @@ func (h *DeviceHandler) ReceiveMetrics(c *gin.Context) {
 	if err := h.deviceService.ProcessMetrics(c.Request.Context(), dev, &payload); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Update alerting service with device last seen
+	if h.alertingService != nil {
+		h.alertingService.UpdateDeviceLastSeen(dev.ID.String())
+		
+		// Check metric thresholds
+		metric := &models.Metric{
+			Temperature: payload.Temperature,
+			Humidity:    payload.Humidity,
+		}
+		h.alertingService.CheckMetricThresholds(dev, metric)
 	}
 
 	// Broadcast via WebSocket

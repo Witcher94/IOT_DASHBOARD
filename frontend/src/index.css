@@ -18,6 +18,55 @@ html {
   color-scheme: dark;
 }
 
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 50%, #f0f2f5 100%);
+  color: #1a1a2e;
+}
+
+html.light .glass {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+html.light .bg-dark-900\/80,
+html.light .bg-dark-800\/50,
+html.light .bg-dark-800,
+html.light .bg-dark-700 {
+  background: rgba(255, 255, 255, 0.9) !important;
+}
+
+html.light .text-dark-300,
+html.light .text-dark-400,
+html.light .text-dark-500 {
+  color: #4a5568 !important;
+}
+
+html.light .text-white {
+  color: #1a202c !important;
+}
+
+html.light .border-dark-700\/50,
+html.light .border-dark-600,
+html.light .border-dark-700 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+html.light .input-field {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #e2e8f0;
+  color: #1a202c;
+}
+
+html.light .btn-secondary {
+  background: white;
+  border-color: #e2e8f0;
+  color: #1a202c;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

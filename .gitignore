@@ -22,6 +22,16 @@ build/
 .env.local
 .env.*.local
 
+# Terraform
+*.tfvars
+*.tfvars.json
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+tfplan
+crash.log
+
 # Logs
 *.log
 npm-debug.log*

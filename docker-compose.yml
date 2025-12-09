@@ -37,6 +37,16 @@ services:
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost/api/v1/auth/google/callback}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
+      # Alerting (логи для GCP Cloud Monitoring)
+      ALERTING_ENABLED: ${ALERTING_ENABLED:-true}
+      ALERT_CHECK_INTERVAL: ${ALERT_CHECK_INTERVAL:-1m}
+      ALERT_OFFLINE_THRESHOLD: ${ALERT_OFFLINE_THRESHOLD:-5m}
+      ALERT_COOLDOWN: ${ALERT_COOLDOWN:-30m}
+      # Пороги для алертів
+      TEMP_MIN: ${TEMP_MIN:-0}
+      TEMP_MAX: ${TEMP_MAX:-40}
+      HUMIDITY_MIN: ${HUMIDITY_MIN:-0}
+      HUMIDITY_MAX: ${HUMIDITY_MAX:-90}
     ports:
       - "8080:8080"
     healthcheck:
@@ -63,4 +73,3 @@ volumes:
 networks:
   default:
     name: iot-network
-

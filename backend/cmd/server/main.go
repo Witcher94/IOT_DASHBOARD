@@ -44,6 +44,19 @@ func main() {
 	// Initialize services
 	authService := services.NewAuthService(cfg, db)
 	deviceService := services.NewDeviceService(db)
+	
+	// Initialize alerting service
+	alertConfig := services.AlertConfig{
+		Enabled:          cfg.AlertingEnabled,
+		CheckInterval:    cfg.AlertCheckInterval,
+		OfflineThreshold: cfg.AlertOfflineThreshold,
+		AlertCooldown:    cfg.AlertCooldown,
+		TempMin:          cfg.TempMin,
+		TempMax:          cfg.TempMax,
+		HumidityMin:      cfg.HumidityMin,
+		HumidityMax:      cfg.HumidityMax,
+	}
+	alertingService := services.NewAlertingService(db, alertConfig)
 
 	// Initialize WebSocket hub
 	hub := websocket.NewHub()
@@ -51,7 +64,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(cfg, db, authService)
-	deviceHandler := handlers.NewDeviceHandler(db, deviceService, hub)
+	deviceHandler := handlers.NewDeviceHandler(db, deviceService, hub, alertingService)
 	dashboardHandler := handlers.NewDashboardHandler(db)
 	wsHandler := handlers.NewWebSocketHandler(hub)
 
@@ -60,7 +73,7 @@ func main() {
 
 	// CORS configuration
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{cfg.FrontendURL, "http://localhost:3000", "http://localhost:5173"},
+		AllowOrigins:     []string{cfg.FrontendURL, "http://localhost:3000", "http://localhost:5173", "http://localhost"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Device-Token"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -102,6 +115,7 @@ func main() {
 				devices.GET("/:id/metrics", deviceHandler.GetMetrics)
 				devices.POST("/:id/commands", deviceHandler.CreateCommand)
 				devices.GET("/:id/commands", deviceHandler.GetCommands)
+				devices.PUT("/:id/alerts", deviceHandler.UpdateAlertSettings)
 			}
 
 			// Dashboard routes
@@ -131,6 +145,9 @@ func main() {
 			esp.POST("/devices/commands/:id/ack", deviceHandler.AcknowledgeCommand)
 		}
 	}
+
+	// Start alerting service
+	go alertingService.Start(ctx)
 
 	// Background job: Mark offline devices
 	go func() {
@@ -176,13 +193,14 @@ func main() {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	alertingService.Stop()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
 	log.Println("Server exited")
 }
-
