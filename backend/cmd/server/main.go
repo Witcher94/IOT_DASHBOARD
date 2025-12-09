@@ -44,7 +44,7 @@ func main() {
 	// Initialize services
 	authService := services.NewAuthService(cfg, db)
 	deviceService := services.NewDeviceService(db)
-	
+
 	// Initialize alerting service
 	alertConfig := services.AlertConfig{
 		Enabled:          cfg.AlertingEnabled,
@@ -66,7 +66,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(cfg, db, authService)
 	deviceHandler := handlers.NewDeviceHandler(db, deviceService, hub, alertingService)
 	dashboardHandler := handlers.NewDashboardHandler(db)
-	wsHandler := handlers.NewWebSocketHandler(hub, cfg)
+	wsHandler := handlers.NewWebSocketHandler(hub)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -132,9 +132,11 @@ func main() {
 				admin.GET("/devices", deviceHandler.GetDevices)
 			}
 
+			// WebSocket ticket (requires JWT auth)
+			protected.POST("/ws/ticket", wsHandler.CreateTicket)
 		}
 
-		// WebSocket (token via query param, not middleware)
+		// WebSocket connection (uses one-time ticket)
 		v1.GET("/ws", wsHandler.HandleWebSocket)
 
 		// ESP Device routes (token auth)

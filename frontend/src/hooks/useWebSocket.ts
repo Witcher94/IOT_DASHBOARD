@@ -4,18 +4,38 @@ import type { WebSocketMessage } from '../types';
 
 type MessageHandler = (message: WebSocketMessage) => void;
 
+// API base URL
+const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/v1`;
+
 export function useWebSocket(onMessage: MessageHandler) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { token, isAuthenticated } = useAuthStore();
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!isAuthenticated || !token) return;
 
-    // Token via query parameter (WebSocket can't use Authorization header)
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/v1/ws?token=${encodeURIComponent(token)}`;
-    
     try {
+      // Step 1: Get one-time ticket (with JWT auth)
+      const ticketResponse = await fetch(`${API_URL}/ws/ticket`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!ticketResponse.ok) {
+        console.error('Failed to get WebSocket ticket');
+        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        return;
+      }
+
+      const { ticket } = await ticketResponse.json();
+
+      // Step 2: Connect WebSocket with ticket
+      const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/v1/ws?ticket=${ticket}`;
+      
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
@@ -70,4 +90,3 @@ export function useWebSocket(onMessage: MessageHandler) {
 
   return { send };
 }
-
