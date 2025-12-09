@@ -87,21 +87,32 @@ void readSensors() {
 // JSON
 // ---------------------------
 String buildJSON() {
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<768> doc;
   
-  doc["system"]["chip_id"] = getChipId();
-  doc["system"]["mac"] = WiFi.macAddress();
-  doc["system"]["platform"] = "ESP32";
-  doc["system"]["firmware"] = FIRMWARE_VERSION;
-  doc["system"]["free_heap"] = ESP.getFreeHeap();
-  
-  doc["sensors"]["temperature"] = lastTemp;
-  doc["sensors"]["humidity"] = lastHum;
-  
-  doc["wifi"]["rssi"] = WiFi.RSSI();
-  
-  doc["mesh_status"]["enabled"] = false;
+  // Root level - what backend expects
+  doc["temperature"] = lastTemp;
+  doc["humidity"] = lastHum;
   doc["dht_enabled"] = cfg.dhtEnabled ? true : false;
+  
+  // System info
+  JsonObject sys = doc.createNestedObject("system");
+  sys["chip_id"] = getChipId();
+  sys["mac"] = WiFi.macAddress();
+  sys["platform"] = "ESP32";
+  sys["firmware"] = FIRMWARE_VERSION;
+  sys["free_heap"] = ESP.getFreeHeap();
+  
+  // Current WiFi
+  JsonObject wifi = doc.createNestedObject("current_wifi");
+  wifi["ssid"] = WiFi.SSID();
+  wifi["rssi"] = WiFi.RSSI();
+  wifi["ip"] = WiFi.localIP().toString();
+  
+  // Mesh status
+  JsonObject mesh = doc.createNestedObject("mesh_status");
+  mesh["enabled"] = false;
+  mesh["running"] = false;
+  mesh["node_count"] = 0;
   
   String out;
   serializeJson(doc, out);
