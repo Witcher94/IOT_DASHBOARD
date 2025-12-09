@@ -62,7 +62,6 @@ jobs:
             --platform managed \
             --service-account iot-cloudrun-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
             --add-cloudsql-instances ${{ secrets.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:iot-dashboard-db \
-            --set-env-vars "PORT=8080" \
             --set-env-vars "DATABASE_URL=postgres://iot_user:${{ secrets.DB_PASSWORD }}@/iot_dashboard?host=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:iot-dashboard-db" \
             --set-env-vars "ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
             --set-env-vars "FRONTEND_URL=https://${{ secrets.DOMAIN }}" \
