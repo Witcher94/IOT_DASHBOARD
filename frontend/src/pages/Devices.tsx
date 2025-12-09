@@ -1,0 +1,252 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Cpu, Search, X, Copy, Check, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { devicesApi } from '../services/api';
+import DeviceCard from '../components/DeviceCard';
+
+export default function Devices() {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newDeviceName, setNewDeviceName] = useState('');
+  const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
+
+  const { data: devices, isLoading } = useQuery({
+    queryKey: ['devices'],
+    queryFn: devicesApi.getAll,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: devicesApi.create,
+    onSuccess: (device) => {
+      setNewDeviceToken(device.token);
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success('Device created successfully!');
+    },
+    onError: () => {
+      toast.error('Failed to create device');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: devicesApi.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success('Device deleted');
+    },
+    onError: () => {
+      toast.error('Failed to delete device');
+    },
+  });
+
+  const handleCreate = () => {
+    if (newDeviceName.trim()) {
+      createMutation.mutate({ name: newDeviceName.trim() });
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setNewDeviceName('');
+    setNewDeviceToken(null);
+    setCopiedToken(false);
+  };
+
+  const copyToken = () => {
+    if (newDeviceToken) {
+      navigator.clipboard.writeText(newDeviceToken);
+      setCopiedToken(true);
+      toast.success('Token copied to clipboard!');
+      setTimeout(() => setCopiedToken(false), 3000);
+    }
+  };
+
+  const filteredDevices = devices?.filter((device) =>
+    device.name.toLowerCase().includes(search.toLowerCase()) ||
+    device.chip_id?.toLowerCase().includes(search.toLowerCase()) ||
+    device.mac?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="p-8">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between mb-8"
+      >
+        <div>
+          <h1 className="text-3xl font-bold mb-2">
+            <span className="gradient-text">Devices</span>
+          </h1>
+          <p className="text-dark-400">
+            Manage your ESP32/ESP8266 devices
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus className="w-5 h-5" />
+          Add Device
+        </button>
+      </motion.div>
+
+      {/* Search */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="relative mb-6"
+      >
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
+        <input
+          type="text"
+          placeholder="Search devices by name, chip ID, or MAC..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input-field pl-12"
+        />
+      </motion.div>
+
+      {/* Devices Grid */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-12 h-12 spinner" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredDevices?.map((device, index) => (
+            <motion.div
+              key={device.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+            >
+              <DeviceCard
+                device={device}
+                isOnline={device.is_online}
+                showActions
+                onDelete={() => {
+                  if (confirm('Are you sure you want to delete this device?')) {
+                    deleteMutation.mutate(device.id);
+                  }
+                }}
+              />
+            </motion.div>
+          ))}
+          {filteredDevices?.length === 0 && (
+            <div className="col-span-full text-center py-20">
+              <Cpu className="w-16 h-16 text-dark-500 mx-auto mb-4" />
+              <p className="text-xl text-dark-300 mb-2">No devices found</p>
+              <p className="text-dark-500">
+                {search ? 'Try a different search term' : 'Add your first device to get started'}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add Device Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={handleCloseModal}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md glass rounded-2xl p-6"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold">
+                  {newDeviceToken ? 'Device Created!' : 'Add New Device'}
+                </h2>
+                <button
+                  onClick={handleCloseModal}
+                  className="p-2 rounded-lg hover:bg-dark-700 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {!newDeviceToken ? (
+                <>
+                  <div className="mb-6">
+                    <label className="block text-sm text-dark-400 mb-2">Device Name</label>
+                    <input
+                      type="text"
+                      placeholder="Living Room Sensor"
+                      value={newDeviceName}
+                      onChange={(e) => setNewDeviceName(e.target.value)}
+                      className="input-field"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={handleCloseModal} className="btn-secondary flex-1">
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreate}
+                      disabled={!newDeviceName.trim() || createMutation.isPending}
+                      className="btn-primary flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {createMutation.isPending && <RefreshCw className="w-4 h-4 animate-spin" />}
+                      Create Device
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-6">
+                    <p className="text-dark-300 mb-4">
+                      Copy this token and paste it into your ESP device configuration. 
+                      You won't be able to see it again!
+                    </p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={newDeviceToken}
+                        readOnly
+                        className="input-field pr-12 font-mono text-sm"
+                      />
+                      <button
+                        onClick={copyToken}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-dark-600 transition-colors"
+                      >
+                        {copiedToken ? (
+                          <Check className="w-5 h-5 text-green-400" />
+                        ) : (
+                          <Copy className="w-5 h-5 text-dark-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-6">
+                    <p className="text-sm text-amber-200">
+                      ⚠️ Make sure to copy the token now. For security reasons, it won't be shown again.
+                    </p>
+                  </div>
+                  <button onClick={handleCloseModal} className="btn-primary w-full">
+                    Done
+                  </button>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
