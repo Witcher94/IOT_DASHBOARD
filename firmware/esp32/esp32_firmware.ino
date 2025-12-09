@@ -74,7 +74,7 @@ void loadConfig() {
     memset(&cfg, 0, sizeof(cfg));
     cfg.magic = CONFIG_MAGIC;
     strcpy(cfg.nodeName, "ESP32-Node");
-    cfg.metricsIntervalMs = 30000;
+    cfg.metricsIntervalMs = 15000; // 15 seconds default
     cfg.dhtEnabled = 1;
     saveConfig();
   }
@@ -341,8 +341,8 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       <input name="backendUrl" value="%BACKEND%" placeholder="https://chnu-iot.com">
       <label>Device Token</label>
       <input name="deviceToken" value="%TOKEN%">
-      <label>Push Interval (ms, min 30000)</label>
-      <input name="interval" type="number" value="%INTERVAL%" min="30000">
+      <label>Push Interval (sec)</label>
+      <input name="interval" type="number" value="%INTERVAL_SEC%" min="15" max="300">
       
       <h3>⚙️ Device</h3>
       <label>Name</label>
@@ -377,7 +377,7 @@ String processTemplate(String html) {
   html.replace("%NODE%", cfg.nodeName);
   html.replace("%BACKEND%", cfg.backendUrl);
   html.replace("%TOKEN%", cfg.deviceToken);
-  html.replace("%INTERVAL%", String(cfg.metricsIntervalMs));
+  html.replace("%INTERVAL_SEC%", String(cfg.metricsIntervalMs / 1000));
   html.replace("%DHT%", cfg.dhtEnabled ? "checked" : "");
   html.replace("%TEMP%", String(lastTemp, 1));
   html.replace("%HUM%", String(lastHum, 1));
@@ -397,8 +397,10 @@ void handleSave() {
   if (server.hasArg("backendUrl")) strncpy(cfg.backendUrl, server.arg("backendUrl").c_str(), sizeof(cfg.backendUrl)-1);
   if (server.hasArg("deviceToken")) strncpy(cfg.deviceToken, server.arg("deviceToken").c_str(), sizeof(cfg.deviceToken)-1);
   if (server.hasArg("interval")) {
-    long val = atol(server.arg("interval").c_str());
-    cfg.metricsIntervalMs = (uint32_t)(val < 30000 ? 30000 : val);
+    long valSec = atol(server.arg("interval").c_str());
+    if (valSec < 15) valSec = 15;
+    if (valSec > 300) valSec = 300;
+    cfg.metricsIntervalMs = (uint32_t)(valSec * 1000);
   }
   cfg.dhtEnabled = server.hasArg("dhtEnabled") ? 1 : 0;
   saveConfig();
