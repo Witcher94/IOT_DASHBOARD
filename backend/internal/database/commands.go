@@ -96,4 +96,3 @@ func (db *DB) DeleteCommand(ctx context.Context, id uuid.UUID) error {
 	_, err := db.Pool.Exec(ctx, "DELETE FROM commands WHERE id = $1", id)
 	return err
 }
-

@@ -374,7 +374,7 @@ func (h *DeviceHandler) ReceiveMetrics(c *gin.Context) {
 	// Update alerting service with device last seen
 	if h.alertingService != nil {
 		h.alertingService.UpdateDeviceLastSeen(dev.ID.String())
-		
+
 		// Check metric thresholds
 		metric := &models.Metric{
 			Temperature: payload.Temperature,
@@ -426,4 +426,3 @@ func (h *DeviceHandler) AcknowledgeCommand(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
-

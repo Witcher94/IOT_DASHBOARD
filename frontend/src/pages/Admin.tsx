@@ -3,13 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Users, Cpu, Shield, Mail, Clock, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
-import { toast } from 'react-toastify';
+import toast from 'react-hot-toast';
 import { adminApi, dashboardApi } from '../services/api';
-import { useTranslation } from '../contexts/settingsStore';
 import type { User, Device } from '../types';
 
 export default function Admin() {
-  const t = useTranslation();
   const queryClient = useQueryClient();
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [userDevices, setUserDevices] = useState<Record<string, Device[]>>({});
@@ -34,7 +32,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      toast.success(t.userDeleted || 'User deleted successfully');
+      toast.success('User deleted successfully');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete user');
@@ -46,7 +44,7 @@ export default function Admin() {
       adminApi.updateUserRole(id, isAdmin),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast.success(t.roleUpdated || 'Role updated successfully');
+      toast.success('Role updated successfully');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to update role');
@@ -94,21 +92,21 @@ export default function Admin() {
         <div className="flex items-center gap-3 mb-2">
           <Shield className="w-8 h-8 text-primary-400" />
           <h1 className="text-3xl font-bold">
-            <span className="gradient-text">{t.adminPanel || 'Admin Panel'}</span>
+            <span className="gradient-text">Admin Panel</span>
           </h1>
         </div>
         <p className="text-dark-400">
-          {t.systemAdministration || 'System administration and monitoring'}
+          System administration and monitoring
         </p>
       </motion.div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         {[
-          { label: t.totalUsers || 'Total Users', value: stats?.total_users ?? 0, icon: Users, color: 'from-purple-500 to-pink-500' },
-          { label: t.totalDevices || 'Total Devices', value: stats?.total_devices ?? 0, icon: Cpu, color: 'from-primary-500 to-blue-500' },
-          { label: t.onlineDevices || 'Online Devices', value: stats?.online_devices ?? 0, icon: Cpu, color: 'from-green-500 to-emerald-500' },
-          { label: t.avgTemperature || 'Avg Temp', value: `${(stats?.avg_temperature ?? 0).toFixed(1)}°C`, icon: Users, color: 'from-orange-500 to-red-500' },
+          { label: 'Total Users', value: stats?.total_users ?? 0, icon: Users, color: 'from-purple-500 to-pink-500' },
+          { label: 'Total Devices', value: stats?.total_devices ?? 0, icon: Cpu, color: 'from-primary-500 to-blue-500' },
+          { label: 'Online Devices', value: stats?.online_devices ?? 0, icon: Cpu, color: 'from-green-500 to-emerald-500' },
+          { label: 'Avg Temp', value: `${(stats?.avg_temperature ?? 0).toFixed(1)}°C`, icon: Users, color: 'from-orange-500 to-red-500' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -136,7 +134,7 @@ export default function Admin() {
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-primary-400" />
-            {t.users || 'Users'} ({users?.length ?? 0})
+            Users ({users?.length ?? 0})
           </h2>
           <div className="space-y-3 max-h-[500px] overflow-auto">
             {users?.map((user) => (
@@ -230,7 +228,7 @@ export default function Admin() {
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Cpu className="w-5 h-5 text-accent-400" />
-            {t.allDevices || 'All Devices'} ({devices?.length ?? 0})
+            All Devices ({devices?.length ?? 0})
           </h2>
           <div className="space-y-3 max-h-[500px] overflow-auto">
             {devices?.map((device) => (
