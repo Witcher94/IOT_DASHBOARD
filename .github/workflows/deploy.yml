@@ -118,6 +118,7 @@ jobs:
 
   deploy:
     name: Deploy to Cloud Run
+    environment: iot-dev
     needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
     permissions:
