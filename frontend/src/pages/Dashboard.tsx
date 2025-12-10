@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
@@ -11,7 +11,7 @@ import {
   Users,
   ChevronRight,
 } from 'lucide-react';
-import { dashboardApi, devicesApi } from '../services/api';
+import { dashboardApi, devicesApi, metricsApi } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useTranslation } from '../contexts/settingsStore';
 import type { WebSocketMessage, Device } from '../types';
@@ -20,9 +20,16 @@ import MetricChartModal from '../components/MetricChartModal';
 
 type MetricType = 'temperature' | 'humidity' | 'rssi' | 'free_heap';
 
+interface DeviceMetrics {
+  temperature?: number;
+  humidity?: number;
+  rssi?: number;
+}
+
 export default function Dashboard() {
   const t = useTranslation();
   const [realtimeDevices, setRealtimeDevices] = useState<Record<string, boolean>>({});
+  const [deviceMetrics, setDeviceMetrics] = useState<Record<string, DeviceMetrics>>({});
   const [chartModal, setChartModal] = useState<{ isOpen: boolean; metricType: MetricType }>({
     isOpen: false,
     metricType: 'temperature',
@@ -48,12 +55,45 @@ export default function Dashboard() {
         [message.device_id!]: isOnline,
       }));
     }
-    if (message.type === 'metrics') {
+    if (message.type === 'metrics' && message.device_id) {
+      const data = message.data as { temperature?: number; humidity?: number; rssi?: number };
+      setDeviceMetrics((prev) => ({
+        ...prev,
+        [message.device_id!]: {
+          temperature: data.temperature,
+          humidity: data.humidity,
+          rssi: data.rssi,
+        },
+      }));
       refetchDevices();
     }
   }, [refetchDevices]);
 
   useWebSocket(handleWebSocketMessage);
+
+  // Load initial metrics for each device
+  useEffect(() => {
+    if (devices && devices.length > 0) {
+      devices.forEach(async (device) => {
+        try {
+          const metrics = await metricsApi.getByDeviceId(device.id, 1);
+          if (metrics && metrics.length > 0) {
+            const latest = metrics[0];
+            setDeviceMetrics((prev) => ({
+              ...prev,
+              [device.id]: {
+                temperature: latest.temperature ?? undefined,
+                humidity: latest.humidity ?? undefined,
+                rssi: latest.rssi ?? undefined,
+              },
+            }));
+          }
+        } catch (e) {
+          // Ignore errors for individual device metrics
+        }
+      });
+    }
+  }, [devices]);
 
   const openChart = (metricType: MetricType) => {
     setChartModal({ isOpen: true, metricType });
@@ -193,6 +233,9 @@ export default function Dashboard() {
               key={device.id}
               device={device}
               isOnline={getDeviceOnlineStatus(device)}
+              temperature={deviceMetrics[device.id]?.temperature}
+              humidity={deviceMetrics[device.id]?.humidity}
+              rssi={deviceMetrics[device.id]?.rssi}
             />
           ))}
           {(!devices || devices.length === 0) && (

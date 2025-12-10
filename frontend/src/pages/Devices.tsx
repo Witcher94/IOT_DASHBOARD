@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Cpu, Search, X, Copy, Check, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { devicesApi } from '../services/api';
+import { devicesApi, metricsApi } from '../services/api';
 import { useTranslation } from '../contexts/settingsStore';
 import DeviceCard from '../components/DeviceCard';
+
+interface DeviceMetrics {
+  temperature?: number;
+  humidity?: number;
+  rssi?: number;
+}
 
 export default function Devices() {
   const t = useTranslation();
@@ -14,12 +20,37 @@ export default function Devices() {
   const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState(false);
   const [search, setSearch] = useState('');
+  const [deviceMetrics, setDeviceMetrics] = useState<Record<string, DeviceMetrics>>({});
   const queryClient = useQueryClient();
 
   const { data: devices, isLoading } = useQuery({
     queryKey: ['devices'],
     queryFn: devicesApi.getAll,
   });
+
+  // Load initial metrics for each device
+  useEffect(() => {
+    if (devices && devices.length > 0) {
+      devices.forEach(async (device) => {
+        try {
+          const metrics = await metricsApi.getByDeviceId(device.id, 1);
+          if (metrics && metrics.length > 0) {
+            const latest = metrics[0];
+            setDeviceMetrics((prev) => ({
+              ...prev,
+              [device.id]: {
+                temperature: latest.temperature ?? undefined,
+                humidity: latest.humidity ?? undefined,
+                rssi: latest.rssi ?? undefined,
+              },
+            }));
+          }
+        } catch {
+          // Ignore errors
+        }
+      });
+    }
+  }, [devices]);
 
   const createMutation = useMutation({
     mutationFn: devicesApi.create,
@@ -132,6 +163,9 @@ export default function Devices() {
                 device={device}
                 isOnline={device.is_online}
                 showActions
+                temperature={deviceMetrics[device.id]?.temperature}
+                humidity={deviceMetrics[device.id]?.humidity}
+                rssi={deviceMetrics[device.id]?.rssi}
                 onDelete={() => {
                   if (confirm(t.confirm + '?')) {
                     deleteMutation.mutate(device.id);

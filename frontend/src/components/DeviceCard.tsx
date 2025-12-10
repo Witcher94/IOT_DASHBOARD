@@ -18,11 +18,29 @@ interface DeviceCardProps {
   isOnline: boolean;
   showActions?: boolean;
   onDelete?: () => void;
+  temperature?: number | null;
+  humidity?: number | null;
+  rssi?: number | null;
 }
 
-export default function DeviceCard({ device, isOnline, showActions, onDelete }: DeviceCardProps) {
+export default function DeviceCard({ 
+  device, 
+  isOnline, 
+  showActions, 
+  onDelete,
+  temperature,
+  humidity,
+  rssi 
+}: DeviceCardProps) {
   const { formatRelative } = useDateFormat();
   const t = useTranslation();
+
+  const formatTemp = (temp?: number | null) => 
+    temp != null ? `${temp.toFixed(1)}°C` : '--°C';
+  const formatHum = (hum?: number | null) => 
+    hum != null ? `${hum.toFixed(0)}%` : '--%';
+  const formatRssi = (r?: number | null) => 
+    r != null ? `${r}dBm` : 'WiFi';
   
   return (
     <motion.div
@@ -67,15 +85,15 @@ export default function DeviceCard({ device, isOnline, showActions, onDelete }: 
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="text-center p-2 rounded-lg bg-dark-800/50">
             <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
-            <p className="text-sm font-medium">--°C</p>
+            <p className="text-sm font-medium">{formatTemp(temperature)}</p>
           </div>
           <div className="text-center p-2 rounded-lg bg-dark-800/50">
             <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
-            <p className="text-sm font-medium">--%</p>
+            <p className="text-sm font-medium">{formatHum(humidity)}</p>
           </div>
           <div className="text-center p-2 rounded-lg bg-dark-800/50">
             <Wifi className="w-4 h-4 text-purple-400 mx-auto mb-1" />
-            <p className="text-sm font-medium">{device.mesh_enabled ? 'Mesh' : 'WiFi'}</p>
+            <p className="text-sm font-medium">{formatRssi(rssi)}</p>
           </div>
         </div>
 
