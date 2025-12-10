@@ -197,22 +197,24 @@ export default function MetricChartModal({ isOpen, onClose, metricType }: Metric
     datasets: selectedDeviceId === 'all' && Object.keys(groupedMetrics).length > 1
       ? Object.entries(groupedMetrics).map(([deviceName, metrics], index) => ({
           label: deviceName,
-          data: metrics.map(m => getMetricValue(m as Metric & { deviceName: string })),
+          data: metrics.map(m => getMetricValue(m as Metric & { deviceName: string }) ?? null),
           borderColor: deviceColors[index % deviceColors.length].border,
           backgroundColor: deviceColors[index % deviceColors.length].bg,
           fill: false,
           tension: 0.4,
           pointRadius: 2,
+          spanGaps: false, // Don't connect line over null/missing values
         }))
       : [{
           label: config.label,
-          data: allMetrics?.map(m => getMetricValue(m as Metric & { deviceName: string })) || [],
+          data: allMetrics?.map(m => getMetricValue(m as Metric & { deviceName: string }) ?? null) || [],
           borderColor: config.color,
           backgroundColor: config.bgColor,
           fill: true,
           tension: 0.4,
           pointRadius: 3,
           pointHoverRadius: 6,
+          spanGaps: false, // Don't connect line over null/missing values
         }],
   };
 

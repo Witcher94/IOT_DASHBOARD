@@ -171,19 +171,22 @@ export default function DeviceDetail() {
     datasets: [
       {
         label: `${t.temperature} (°C)`,
-        data: metrics?.map((m: Metric) => m.temperature) || [],
+        // null/undefined = no data, Chart.js will skip these points
+        data: metrics?.map((m: Metric) => m.temperature ?? null) || [],
         borderColor: '#f97316',
         backgroundColor: 'rgba(249, 115, 22, 0.1)',
         fill: true,
         tension: 0.4,
+        spanGaps: false, // Don't connect line over null/missing values
       },
       {
         label: `${t.humidity} (%)`,
-        data: metrics?.map((m: Metric) => m.humidity) || [],
+        data: metrics?.map((m: Metric) => m.humidity ?? null) || [],
         borderColor: '#06b6d4',
         backgroundColor: 'rgba(6, 182, 212, 0.1)',
         fill: true,
         tension: 0.4,
+        spanGaps: false, // Don't connect line over null/missing values
       },
     ],
   };
