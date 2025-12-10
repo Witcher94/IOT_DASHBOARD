@@ -40,6 +40,10 @@ ConfigData cfg;
 unsigned long lastPush = 0;
 float lastTemp = 0, lastHum = 0;
 
+// Global HTTP client - reuse to avoid memory leaks
+WiFiClientSecure secureClient;
+WiFiClient plainClient;
+
 // ---------------------------
 // HELPERS
 // ---------------------------
@@ -193,13 +197,12 @@ void pushMetrics() {
   
   HTTPClient http;
   
+  // Use global clients to avoid memory leaks
   if (url.startsWith("https")) {
-    WiFiClientSecure *client = new WiFiClientSecure;
-    client->setInsecure();
-    http.begin(*client, url);
+    secureClient.setInsecure();
+    http.begin(secureClient, url);
   } else {
-    WiFiClient client;
-    http.begin(client, url);
+    http.begin(plainClient, url);
   }
   
   http.addHeader("Content-Type", "application/json");
@@ -215,6 +218,9 @@ void pushMetrics() {
   }
   
   http.end();
+  
+  // Log memory for debugging
+  Serial.printf("[MEM] Free heap: %d bytes\n", ESP.getFreeHeap());
 }
 
 // ---------------------------
