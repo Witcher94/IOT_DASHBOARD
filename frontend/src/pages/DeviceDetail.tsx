@@ -56,6 +56,7 @@ export default function DeviceDetail() {
   const queryClient = useQueryClient();
   const [selectedPeriod, setSelectedPeriod] = useState('1h');
   const [copiedToken, setCopiedToken] = useState(false);
+  const [visibleToken, setVisibleToken] = useState<string | null>(null);
 
   const { data: device, isLoading: deviceLoading } = useQuery({
     queryKey: ['device', id],
@@ -100,9 +101,10 @@ export default function DeviceDetail() {
 
   const regenerateTokenMutation = useMutation({
     mutationFn: () => devicesApi.regenerateToken(id!),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setVisibleToken(data.token);
       queryClient.invalidateQueries({ queryKey: ['device', id] });
-      toast.success('Token regenerated!');
+      toast.success(t.tokenRegenerated);
     },
   });
 
@@ -137,8 +139,9 @@ export default function DeviceDetail() {
   useWebSocket(handleWebSocketMessage);
 
   const copyToken = () => {
-    if (device?.token) {
-      navigator.clipboard.writeText(device.token);
+    const tokenToCopy = visibleToken || device?.token;
+    if (tokenToCopy) {
+      navigator.clipboard.writeText(tokenToCopy);
       setCopiedToken(true);
       toast.success(t.copyToken);
       setTimeout(() => setCopiedToken(false), 3000);
@@ -498,34 +501,58 @@ export default function DeviceDetail() {
             <Settings className="w-5 h-5 text-dark-400" />
             {t.deviceToken}
           </h2>
-          <div className="flex gap-3">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={device.token}
-                readOnly
-                className="input-field pr-12 font-mono text-sm"
-              />
+          {visibleToken ? (
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm">
+                ⚠️ {t.tokenWarning}
+              </div>
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={visibleToken}
+                    readOnly
+                    className="input-field pr-12 font-mono text-sm"
+                  />
+                  <button
+                    onClick={copyToken}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-dark-600 transition-colors"
+                  >
+                    {copiedToken ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-dark-400" />}
+                  </button>
+                </div>
+                <button
+                  onClick={() => setVisibleToken(null)}
+                  className="btn-primary"
+                >
+                  {t.done}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value="••••••••••••••••••••••••••••••••"
+                  readOnly
+                  className="input-field font-mono text-sm text-dark-500"
+                />
+              </div>
               <button
-                onClick={copyToken}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-dark-600 transition-colors"
+                onClick={() => {
+                  if (confirm(t.confirm + '?')) {
+                    regenerateTokenMutation.mutate();
+                  }
+                }}
+                disabled={regenerateTokenMutation.isPending}
+                className="btn-secondary flex items-center gap-2"
               >
-                {copiedToken ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-dark-400" />}
+                <RefreshCw className={`w-4 h-4 ${regenerateTokenMutation.isPending ? 'animate-spin' : ''}`} />
+                {t.regenerate}
               </button>
             </div>
-            <button
-              onClick={() => {
-                if (confirm(t.confirm + '?')) {
-                  regenerateTokenMutation.mutate();
-                }
-              }}
-              disabled={regenerateTokenMutation.isPending}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${regenerateTokenMutation.isPending ? 'animate-spin' : ''}`} />
-              {t.regenerate}
-            </button>
-          </div>
+          )}
         </motion.div>
       </div>
     </div>

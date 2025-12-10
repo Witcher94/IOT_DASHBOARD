@@ -89,6 +89,7 @@ export const translations = {
     recentCommands: 'Останні команди',
     deviceToken: 'Токен пристрою',
     regenerate: 'Перегенерувати',
+    tokenRegenerated: 'Токен перегенеровано!',
     
     // Settings
     settingsTitle: 'Налаштування',
@@ -107,6 +108,7 @@ export const translations = {
     cancel: 'Скасувати',
     delete: 'Видалити',
     confirm: 'Підтвердити',
+    neverConnected: 'Ще не підключався',
   },
   en: {
     // Navigation
@@ -152,6 +154,7 @@ export const translations = {
     recentCommands: 'Recent Commands',
     deviceToken: 'Device Token',
     regenerate: 'Regenerate',
+    tokenRegenerated: 'Token regenerated!',
     
     // Settings
     settingsTitle: 'Settings',
@@ -170,6 +173,7 @@ export const translations = {
     cancel: 'Cancel',
     delete: 'Delete',
     confirm: 'Confirm',
+    neverConnected: 'Never connected',
   },
 };
 

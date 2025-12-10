@@ -44,7 +44,12 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, device)
+	// Return device with token (only on creation)
+	response := models.DeviceWithToken{
+		Device: *device,
+		Token:  device.Token,
+	}
+	c.JSON(http.StatusCreated, response)
 }
 
 func (h *DeviceHandler) GetDevices(c *gin.Context) {

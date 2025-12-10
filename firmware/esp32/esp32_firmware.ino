@@ -87,32 +87,41 @@ void readSensors() {
 // JSON
 // ---------------------------
 String buildJSON() {
-  StaticJsonDocument<768> doc;
+  StaticJsonDocument<1024> doc;
   
-  // Root level - what backend expects
+  // Root level fields
+  doc["node_name"] = cfg.nodeName;
   doc["temperature"] = lastTemp;
   doc["humidity"] = lastHum;
   doc["dht_enabled"] = cfg.dhtEnabled ? true : false;
   
-  // System info
+  // System info (matches SystemInfo struct)
   JsonObject sys = doc.createNestedObject("system");
   sys["chip_id"] = getChipId();
   sys["mac"] = WiFi.macAddress();
-  sys["platform"] = "ESP32";
   sys["firmware"] = FIRMWARE_VERSION;
-  sys["free_heap"] = ESP.getFreeHeap();
+  sys["platform"] = "ESP32";
+  sys["free_heap"] = (long)ESP.getFreeHeap();
+  sys["cpu_freq"] = ESP.getCpuFreqMHz();
   
-  // Current WiFi
+  // Current WiFi (matches CurrentWifi struct)
   JsonObject wifi = doc.createNestedObject("current_wifi");
   wifi["ssid"] = WiFi.SSID();
   wifi["rssi"] = WiFi.RSSI();
+  wifi["bssid"] = WiFi.BSSIDstr();
   wifi["ip"] = WiFi.localIP().toString();
+  wifi["channel"] = WiFi.channel();
   
-  // Mesh status
+  // Mesh status (matches MeshStatus struct)
   JsonObject mesh = doc.createNestedObject("mesh_status");
   mesh["enabled"] = false;
   mesh["running"] = false;
+  mesh["node_id"] = 0;
   mesh["node_count"] = 0;
+  
+  // Empty arrays
+  doc.createNestedArray("wifi_scan");
+  doc.createNestedArray("mesh_neighbors");
   
   String out;
   serializeJson(doc, out);
@@ -178,11 +187,8 @@ void pushMetrics() {
   Serial.println("==== HTTP DEBUG ====");
   Serial.print("URL: ");
   Serial.println(url);
-  Serial.print("Token: [");
-  Serial.print(cfg.deviceToken);
-  Serial.println("]");
-  Serial.print("Token length: ");
-  Serial.println(strlen(cfg.deviceToken));
+  Serial.println("Payload:");
+  Serial.println(payload);
   Serial.println("====================");
   
   HTTPClient http;

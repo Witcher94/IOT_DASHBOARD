@@ -24,7 +24,7 @@ type Device struct {
 	ID           uuid.UUID  `json:"id"`
 	UserID       uuid.UUID  `json:"user_id"`
 	Name         string     `json:"name"`
-	Token        string     `json:"token,omitempty"`
+	Token        string     `json:"-"` // Hidden by default, use DeviceWithToken for responses that need it
 	ChipID       *string    `json:"chip_id,omitempty"`
 	MAC          *string    `json:"mac,omitempty"`
 	Platform     *string    `json:"platform,omitempty"`
@@ -41,6 +41,12 @@ type Device struct {
 	AlertPolicyID   string   `json:"-"` // Internal, not exposed to API
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// DeviceWithToken - Device response that includes the token (for create/regenerate)
+type DeviceWithToken struct {
+	Device
+	Token string `json:"token"`
 }
 
 // Metric представляє метрики з пристрою

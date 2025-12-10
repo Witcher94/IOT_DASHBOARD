@@ -142,13 +142,13 @@ func (db *DB) UpdateAlertSettings(ctx context.Context, deviceID uuid.UUID, req *
 func (db *DB) UpdateDevice(ctx context.Context, device *models.Device) error {
 	query := `
 		UPDATE devices SET
-			name = $2, chip_id = $3, mac = $4, platform = $5, firmware = $6,
-			is_online = $7, last_seen = $8, dht_enabled = $9, mesh_enabled = $10,
-			updated_at = $11
+			name = $2, token = $3, chip_id = $4, mac = $5, platform = $6, firmware = $7,
+			is_online = $8, last_seen = $9, dht_enabled = $10, mesh_enabled = $11,
+			updated_at = $12
 		WHERE id = $1
 	`
 	_, err := db.Pool.Exec(ctx, query,
-		device.ID, device.Name, device.ChipID, device.MAC, device.Platform, device.Firmware,
+		device.ID, device.Name, device.Token, device.ChipID, device.MAC, device.Platform, device.Firmware,
 		device.IsOnline, device.LastSeen, device.DHTEnabled, device.MeshEnabled, time.Now(),
 	)
 	return err

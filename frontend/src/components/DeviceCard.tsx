@@ -9,7 +9,8 @@ import {
   Trash2,
   ExternalLink,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { useDateFormat } from '../utils/dateFormat';
+import { useTranslation } from '../contexts/settingsStore';
 import type { Device } from '../types';
 
 interface DeviceCardProps {
@@ -20,6 +21,9 @@ interface DeviceCardProps {
 }
 
 export default function DeviceCard({ device, isOnline, showActions, onDelete }: DeviceCardProps) {
+  const { formatRelative } = useDateFormat();
+  const t = useTranslation();
+  
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
@@ -80,8 +84,8 @@ export default function DeviceCard({ device, isOnline, showActions, onDelete }: 
           <div className="flex items-center gap-1 text-xs text-dark-400">
             <Clock className="w-3 h-3" />
             {device.last_seen 
-              ? formatDistanceToNow(new Date(device.last_seen), { addSuffix: true })
-              : 'Never connected'
+              ? formatRelative(device.last_seen)
+              : t.neverConnected
             }
           </div>
           <div className="flex items-center gap-2">
