@@ -299,7 +299,7 @@ export default function DeviceDetail() {
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {[
-          { label: t.temperature, value: latestMetric?.temperature != null ? roundToHalf(latestMetric.temperature).toFixed(1) : '--', unit: '°C', icon: Thermometer, color: 'text-orange-400' },
+          { label: t.temperature, value: latestMetric?.temperature != null ? Math.round(latestMetric.temperature) : '--', unit: '°C', icon: Thermometer, color: 'text-orange-400' },
           { label: t.humidity, value: latestMetric?.humidity?.toFixed(0) ?? '--', unit: '%', icon: Droplets, color: 'text-cyan-400' },
           { label: t.wifiSignal, value: latestMetric?.rssi ?? '--', unit: 'dBm', icon: Wifi, color: 'text-purple-400' },
           { label: t.freeMemory, value: latestMetric?.free_heap ? (latestMetric.free_heap / 1024).toFixed(0) : '--', unit: 'KB', icon: Cpu, color: 'text-green-400' },

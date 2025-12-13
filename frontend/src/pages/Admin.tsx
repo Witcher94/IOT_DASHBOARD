@@ -106,7 +106,7 @@ export default function Admin() {
           { label: 'Total Users', value: stats?.total_users ?? 0, icon: Users, color: 'from-purple-500 to-pink-500' },
           { label: 'Total Devices', value: stats?.total_devices ?? 0, icon: Cpu, color: 'from-primary-500 to-blue-500' },
           { label: 'Online Devices', value: stats?.online_devices ?? 0, icon: Cpu, color: 'from-green-500 to-emerald-500' },
-          { label: 'Avg Temp', value: `${(stats?.avg_temperature ?? 0).toFixed(1)}°C`, icon: Users, color: 'from-orange-500 to-red-500' },
+          { label: 'Avg Temp', value: `${Math.round(stats?.avg_temperature ?? 0)}°C`, icon: Users, color: 'from-orange-500 to-red-500' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}

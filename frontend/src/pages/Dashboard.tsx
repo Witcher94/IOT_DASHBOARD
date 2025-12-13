@@ -118,7 +118,7 @@ export default function Dashboard() {
     },
     {
       label: t.avgTemperature,
-      value: `${(stats?.avg_temperature ?? 0).toFixed(1)}°C`,
+      value: `${Math.round(stats?.avg_temperature ?? 0)}°C`,
       icon: Thermometer,
       color: 'from-orange-400 to-red-500',
       bgColor: 'bg-orange-500/10',
