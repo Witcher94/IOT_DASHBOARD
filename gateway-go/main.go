@@ -137,15 +137,15 @@ type MetricsData struct {
 	IsRoot      bool    `json:"is_root"`
 }
 
-// BatchMetricsPayload for backend
+// BatchMetricsPayload for backend (matches backend model)
 type BatchMetricsPayload struct {
-	GatewayToken string       `json:"gateway_token"`
-	Timestamp    time.Time    `json:"timestamp"`
-	Nodes        []NodeMetric `json:"nodes"`
+	GatewayID string       `json:"gateway_id"`
+	Timestamp time.Time    `json:"timestamp"`
+	Nodes     []NodeMetric `json:"nodes"`
 }
 
 type NodeMetric struct {
-	MeshNodeID  uint32  `json:"mesh_node_id"`
+	NodeID      uint32  `json:"node_id"` // painlessMesh node ID
 	NodeName    string  `json:"node_name"`
 	ChipID      string  `json:"chip_id"`
 	MAC         string  `json:"mac"`
@@ -155,7 +155,7 @@ type NodeMetric struct {
 	Humidity    float64 `json:"humidity"`
 	FreeHeap    int64   `json:"free_heap"`
 	RSSI        int     `json:"rssi"`
-	IsRoot      bool    `json:"is_root"`
+	DHTEnabled  bool    `json:"dht_enabled"`
 }
 
 func main() {
@@ -567,7 +567,7 @@ func (g *Gateway) sendBatchMetrics() {
 	for _, node := range g.nodes {
 		if node.IsOnline {
 			metrics = append(metrics, NodeMetric{
-				MeshNodeID:  node.NodeID,
+				NodeID:      node.NodeID,
 				NodeName:    node.NodeName,
 				ChipID:      node.ChipID,
 				MAC:         node.MAC,
@@ -577,7 +577,7 @@ func (g *Gateway) sendBatchMetrics() {
 				Humidity:    node.Humidity,
 				FreeHeap:    node.FreeHeap,
 				RSSI:        node.RSSI,
-				IsRoot:      node.IsRoot,
+				DHTEnabled:  true,
 			})
 		}
 	}
@@ -588,9 +588,9 @@ func (g *Gateway) sendBatchMetrics() {
 	}
 
 	payload := BatchMetricsPayload{
-		GatewayToken: g.config.GatewayToken,
-		Timestamp:    time.Now(),
-		Nodes:        metrics,
+		GatewayID: "rpi-gateway",
+		Timestamp: time.Now(),
+		Nodes:     metrics,
 	}
 
 	jsonData, _ := json.Marshal(payload)
