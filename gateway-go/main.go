@@ -21,7 +21,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const VERSION = "2.1.0"
+const VERSION = "2.2.0"
+const TOKEN_FILE = "/etc/mesh-gateway/token"
 
 // ConfigFile represents the YAML config structure
 type ConfigFile struct {
@@ -200,6 +201,14 @@ func main() {
 		config.GatewayToken = token
 	}
 
+	// Load token from file if not set
+	if config.GatewayToken == "" {
+		if token := loadTokenFromFile(); token != "" {
+			config.GatewayToken = token
+			log.Println("Token loaded from file")
+		}
+	}
+
 	gateway := NewGateway(config)
 
 	// Handle signals
@@ -216,6 +225,23 @@ func main() {
 	if err := gateway.Run(); err != nil {
 		log.Fatalf("Gateway error: %v", err)
 	}
+}
+
+// Token file management
+func loadTokenFromFile() string {
+	data, err := os.ReadFile(TOKEN_FILE)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func saveTokenToFile(token string) error {
+	dir := "/etc/mesh-gateway"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(TOKEN_FILE, []byte(token), 0600)
 }
 
 func loadConfigFile(path string, config *Config) error {
@@ -661,10 +687,12 @@ func (g *Gateway) startWebServer() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", g.handleIndex)
+	mux.HandleFunc("/settings", g.handleSettings)
 	mux.HandleFunc("/api/nodes", g.handleAPINodes)
 	mux.HandleFunc("/api/stats", g.handleAPIStats)
 	mux.HandleFunc("/api/command", g.handleAPICommand)
 	mux.HandleFunc("/api/broadcast", g.handleAPIBroadcast)
+	mux.HandleFunc("/api/settings", g.handleAPISettings)
 
 	addr := fmt.Sprintf(":%d", g.config.WebPort)
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -708,76 +736,86 @@ func (g *Gateway) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (g *Gateway) renderHTML(w http.ResponseWriter, nodes []*MeshNode, onlineCount int, messages, batches int64, uptime string) {
 	totalNodes := len(nodes)
+	hasToken := g.config.GatewayToken != ""
+
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
     <title>Mesh Gateway</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>">
     <style>
         :root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--primary:#38bdf8;--success:#22c55e;--danger:#ef4444;--warning:#f59e0b}
-        *{box-sizing:border-box;margin:0;padding:0}
-        body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:20px;min-height:100vh}
-        .container{max-width:1400px;margin:0 auto}
-        header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px}
-        h1{font-size:1.75rem;display:flex;align-items:center;gap:12px}
-        .version{font-size:0.75rem;background:var(--card);padding:4px 10px;border-radius:20px;color:var(--muted)}
-        .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
-        .stat{background:var(--card);padding:16px;border-radius:12px;text-align:center;border:1px solid var(--border)}
-        .stat-value{font-size:1.75rem;font-weight:700;color:var(--primary)}
+        *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding:12px;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+        .container{max-width:600px;margin:0 auto}
+        header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:8px}
+        h1{font-size:1.25rem;display:flex;align-items:center;gap:8px;flex:1}
+        .version{font-size:0.625rem;background:var(--card);padding:3px 8px;border-radius:12px;color:var(--muted)}
+        .settings-btn{width:40px;height:40px;border-radius:10px;background:var(--card);border:1px solid var(--border);color:var(--text);font-size:1.25rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+        .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+        .stat{background:var(--card);padding:12px 8px;border-radius:12px;text-align:center;border:1px solid var(--border)}
+        .stat-value{font-size:1.5rem;font-weight:700;color:var(--primary);line-height:1}
         .stat-value.success{color:var(--success)}
-        .stat-label{font-size:0.75rem;color:var(--muted);margin-top:4px}
-        .nodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px}
-        .node{background:var(--card);border-radius:12px;border:1px solid var(--border);overflow:hidden;transition:transform 0.2s}
-        .node:hover{transform:translateY(-2px)}
-        .node.offline{opacity:0.6}
-        .node.root{border-color:var(--warning)}
-        .node-header{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--border)}
-        .node-name{font-weight:600;display:flex;align-items:center;gap:8px}
-        .root-badge{font-size:0.625rem;background:var(--warning);color:#000;padding:2px 6px;border-radius:4px;font-weight:700}
-        .status{width:10px;height:10px;border-radius:50%%}
+        .stat-label{font-size:0.625rem;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .nodes{display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
+        .node{background:var(--card);border-radius:16px;border:1px solid var(--border);overflow:hidden}
+        .node.offline{opacity:0.5}
+        .node.root{border-color:var(--warning);border-width:2px}
+        .node-header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px}
+        .node-name{font-weight:600;font-size:1rem;display:flex;align-items:center;gap:8px}
+        .root-badge{font-size:0.5rem;background:var(--warning);color:#000;padding:2px 6px;border-radius:4px;font-weight:700;text-transform:uppercase}
+        .status{width:12px;height:12px;border-radius:50%%;flex-shrink:0}
         .status.online{background:var(--success);box-shadow:0 0 8px var(--success)}
         .status.offline{background:var(--danger)}
-        .metrics{display:grid;grid-template-columns:repeat(3,1fr);padding:16px;gap:8px}
-        .metric{text-align:center;padding:8px;background:var(--bg);border-radius:8px}
-        .metric-val{font-size:1.25rem;font-weight:600}
+        .metrics{display:grid;grid-template-columns:repeat(3,1fr);padding:0 12px 12px;gap:8px}
+        .metric{text-align:center;padding:12px 8px;background:var(--bg);border-radius:12px}
+        .metric-val{font-size:1.5rem;font-weight:700;line-height:1}
         .metric-val.temp{color:#fb923c}
         .metric-val.hum{color:#22d3ee}
         .metric-val.rssi{color:#a78bfa}
-        .metric-lbl{font-size:0.625rem;color:var(--muted);text-transform:uppercase}
-        .node-info{padding:12px 16px;font-size:0.75rem;color:var(--muted);border-top:1px solid var(--border)}
-        .actions{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border)}
-        .btn{flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-size:0.75rem;font-weight:500;transition:opacity 0.2s}
-        .btn:hover{opacity:0.85}
+        .metric-lbl{font-size:0.5rem;color:var(--muted);text-transform:uppercase;margin-top:4px;letter-spacing:0.5px}
+        .node-footer{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+        .btn{flex:1;padding:12px;border:none;border-radius:10px;cursor:pointer;font-size:0.875rem;font-weight:600;transition:all 0.15s;-webkit-appearance:none}
+        .btn:active{transform:scale(0.97)}
         .btn-primary{background:var(--primary);color:#000}
         .btn-danger{background:var(--danger);color:#fff}
-        .broadcast{background:var(--card);padding:20px;border-radius:12px;border:1px solid var(--border)}
-        .broadcast h2{margin-bottom:16px;font-size:1rem}
-        .broadcast-btns{display:flex;gap:12px;flex-wrap:wrap}
-        .empty{text-align:center;padding:60px;color:var(--muted)}
-        .empty-icon{font-size:4rem;margin-bottom:16px}
-        @media(max-width:640px){.metrics{grid-template-columns:repeat(2,1fr)}.stats{grid-template-columns:repeat(2,1fr)}}
+        .broadcast{background:var(--card);padding:16px;border-radius:16px;border:1px solid var(--border)}
+        .broadcast h2{margin-bottom:12px;font-size:0.875rem;color:var(--muted)}
+        .broadcast-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        .empty{text-align:center;padding:48px 24px;color:var(--muted)}
+        .empty-icon{font-size:3rem;margin-bottom:12px}
+        .empty-text{font-size:0.875rem}
+        .token-warning{background:rgba(245,158,11,0.15);border:1px solid var(--warning);color:var(--warning);padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:0.875rem;display:flex;align-items:center;gap:8px}
+        .token-warning a{color:var(--warning);font-weight:600}
     </style>
 </head>
 <body>
 <div class="container">
     <header>
-        <h1>🌐 Mesh Gateway <span class="version">v%s</span></h1>
+        <h1>🌐 Gateway <span class="version">v%s</span></h1>
+        <button class="settings-btn" onclick="location.href='/settings'" title="Settings">⚙️</button>
     </header>
+    %s
     <div class="stats">
-        <div class="stat"><div class="stat-value success">%d</div><div class="stat-label">Online Nodes</div></div>
-        <div class="stat"><div class="stat-value">%d</div><div class="stat-label">Total Nodes</div></div>
+        <div class="stat"><div class="stat-value success">%d</div><div class="stat-label">Online</div></div>
         <div class="stat"><div class="stat-value">%d</div><div class="stat-label">Messages</div></div>
-        <div class="stat"><div class="stat-value">%d</div><div class="stat-label">Batches Sent</div></div>
         <div class="stat"><div class="stat-value">%s</div><div class="stat-label">Uptime</div></div>
     </div>
     <div class="nodes">`,
-		VERSION, onlineCount, totalNodes, messages, batches, uptime)
-	// Debug: log.Printf("Stats: online=%d total=%d msg=%d batch=%d up=%s", onlineCount, totalNodes, messages, batches, uptime)
-
+		VERSION,
+		func() string {
+			if !hasToken {
+				return `<div class="token-warning">⚠️ <span>No token configured. <a href="/settings">Set up now</a></span></div>`
+			}
+			return ""
+		}(),
+		onlineCount, messages, uptime)
 	if len(nodes) == 0 {
-		html += `<div class="empty"><div class="empty-icon">📡</div><div>Waiting for mesh nodes...</div></div>`
+		html += `<div class="empty"><div class="empty-icon">📡</div><div class="empty-text">Waiting for mesh nodes...</div></div>`
 	}
+	_ = totalNodes // unused now
 
 	for _, n := range nodes {
 		statusClass := "online"
@@ -803,35 +841,39 @@ func (g *Gateway) renderHTML(w http.ResponseWriter, nodes []*MeshNode, onlineCou
             </div>
             <div class="metrics">
                 <div class="metric"><div class="metric-val temp">%.0f°</div><div class="metric-lbl">Temp</div></div>
-                <div class="metric"><div class="metric-val hum">%.0f%%</div><div class="metric-lbl">Humidity</div></div>
+                <div class="metric"><div class="metric-val hum">%.0f%%</div><div class="metric-lbl">Hum</div></div>
                 <div class="metric"><div class="metric-val rssi">%d</div><div class="metric-lbl">RSSI</div></div>
             </div>
-            <div class="node-info">ID: %d | %s | Heap: %dKB | %s</div>
-            <div class="actions">
-                <button class="btn btn-primary" onclick="cmd(%d,'status')">Refresh</button>
-                <button class="btn btn-danger" onclick="cmd(%d,'reboot')">Reboot</button>
+            <div class="node-footer">
+                <button class="btn btn-primary" onclick="cmd(%d,'status')">🔄 Refresh</button>
+                <button class="btn btn-danger" onclick="cmd(%d,'reboot')">🔃 Reboot</button>
             </div>
         </div>`,
 			nodeClass, n.NodeName, rootBadge, statusClass,
 			n.Temperature, n.Humidity, n.RSSI,
-			n.NodeID, n.Platform, n.FreeHeap/1024, n.LastSeen.Format("15:04:05"),
 			n.NodeID, n.NodeID)
 	}
 
 	html += `
     </div>
     <div class="broadcast">
-        <h2>📢 Broadcast Commands</h2>
+        <h2>📢 Broadcast</h2>
         <div class="broadcast-btns">
-            <button class="btn btn-primary" onclick="bcast('status')">Request All Status</button>
-            <button class="btn btn-danger" onclick="if(confirm('Reboot ALL nodes?'))bcast('reboot')">Reboot All</button>
+            <button class="btn btn-primary" onclick="bcast('status')">🔄 Refresh All</button>
+            <button class="btn btn-danger" onclick="if(confirm('Reboot ALL?'))bcast('reboot')">🔃 Reboot All</button>
         </div>
     </div>
 </div>
 <script>
-function cmd(id,c){fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node_id:id,command:c})}).then(r=>r.json()).then(d=>{if(d.error)alert(d.error);else setTimeout(()=>location.reload(),500)})}
-function bcast(c){fetch('/api/broadcast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:c})}).then(r=>r.json()).then(d=>{if(d.error)alert(d.error)})}
-setTimeout(()=>location.reload(),10000);
+function cmd(id,c){
+    fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node_id:id,command:c})})
+    .then(r=>r.json()).then(d=>{if(d.error)alert(d.error);else setTimeout(()=>location.reload(),1000)});
+}
+function bcast(c){
+    fetch('/api/broadcast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:c})})
+    .then(r=>r.json()).then(d=>{if(d.error)alert(d.error);else setTimeout(()=>location.reload(),1000)});
+}
+setTimeout(()=>location.reload(),15000);
 </script>
 </body></html>`
 
@@ -934,4 +976,156 @@ func (g *Gateway) printStats() {
 	log.Printf("   Commands: %d", g.stats.CommandsSent)
 	log.Printf("   Errors: %d", g.stats.Errors)
 	log.Println("════════════════════════════════════════")
+}
+
+func (g *Gateway) handleSettings(w http.ResponseWriter, r *http.Request) {
+	hasToken := g.config.GatewayToken != ""
+	tokenMasked := ""
+	if hasToken {
+		t := g.config.GatewayToken
+		if len(t) > 8 {
+			tokenMasked = t[:4] + "..." + t[len(t)-4:]
+		} else {
+			tokenMasked = "****"
+		}
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Gateway Settings</title>
+    <style>
+        :root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--primary:#38bdf8;--success:#22c55e;--danger:#ef4444}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+        .container{max-width:500px;margin:0 auto}
+        h1{font-size:1.5rem;margin-bottom:24px;display:flex;align-items:center;gap:12px}
+        .card{background:var(--card);border-radius:16px;padding:24px;margin-bottom:16px;border:1px solid var(--border)}
+        .form-group{margin-bottom:20px}
+        label{display:block;font-size:0.875rem;color:var(--muted);margin-bottom:8px}
+        input[type="text"]{width:100%%;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:1rem}
+        input[type="text"]:focus{outline:none;border-color:var(--primary)}
+        .btn{display:block;width:100%%;padding:14px;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:opacity 0.2s}
+        .btn-primary{background:var(--primary);color:#000}
+        .btn-secondary{background:var(--border);color:var(--text);margin-top:12px}
+        .btn:hover{opacity:0.9}
+        .status{display:flex;align-items:center;gap:8px;padding:12px 16px;border-radius:8px;margin-bottom:20px;font-size:0.875rem}
+        .status.success{background:rgba(34,197,94,0.15);color:var(--success)}
+        .status.warning{background:rgba(245,158,11,0.15);color:#f59e0b}
+        .hint{font-size:0.75rem;color:var(--muted);margin-top:8px}
+        .back{display:inline-flex;align-items:center;gap:8px;color:var(--muted);text-decoration:none;margin-bottom:16px;font-size:0.875rem}
+        .back:hover{color:var(--text)}
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="/" class="back">← Back to Dashboard</a>
+    <h1>⚙️ Settings</h1>
+    
+    <div class="card">
+        <div class="status %s">
+            <span>%s</span>
+        </div>
+        
+        <form id="tokenForm">
+            <div class="form-group">
+                <label>Gateway Token</label>
+                <input type="text" id="token" placeholder="Paste your device token here" value="">
+                <div class="hint">Get token from IoT Dashboard → Add Device → Copy Token</div>
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Save Token</button>
+        </form>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+    
+    <div class="card">
+        <label>Current Configuration</label>
+        <p style="font-size:0.875rem;color:var(--muted);margin-top:8px">
+            Serial: %s<br>
+            Backend: %s<br>
+            Token: %s
+        </p>
+    </div>
+</div>
+<script>
+document.getElementById('tokenForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const token = document.getElementById('token').value.trim();
+    if (!token) { alert('Please enter a token'); return; }
+    if (token.length < 32) { alert('Token seems too short'); return; }
+    
+    try {
+        const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({token: token})
+        });
+        const data = await res.json();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            alert('Token saved! Gateway will now send metrics to backend.');
+            window.location.href = '/';
+        }
+    } catch (err) {
+        alert('Failed to save: ' + err);
+    }
+};
+</script>
+</body>
+</html>`,
+		func() string { if hasToken { return "success" } else { return "warning" } }(),
+		func() string { if hasToken { return "✅ Token configured" } else { return "⚠️ No token - metrics won't be sent to cloud" } }(),
+		g.config.SerialPort,
+		g.config.BackendURL,
+		func() string { if hasToken { return tokenMasked } else { return "(not set)" } }())
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
+}
+
+func (g *Gateway) handleAPISettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method == "GET" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"has_token":   g.config.GatewayToken != "",
+			"backend_url": g.config.BackendURL,
+			"serial_port": g.config.SerialPort,
+		})
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	if req.Token == "" {
+		json.NewEncoder(w).Encode(map[string]string{"error": "Token is required"})
+		return
+	}
+
+	// Save to file
+	if err := saveTokenToFile(req.Token); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to save: " + err.Error()})
+		return
+	}
+
+	// Update runtime config
+	g.config.GatewayToken = req.Token
+	log.Printf("✅ Token updated via web UI")
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Token saved successfully"})
 }
