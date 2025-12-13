@@ -101,3 +101,4 @@ func DeviceAuthMiddleware(db *database.DB) gin.HandlerFunc {
 	}
 }
 
+

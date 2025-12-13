@@ -1,0 +1,13 @@
+# Raspberry Pi Mesh Gateway Configuration
+# Copy this to .env and fill in your values
+
+# Serial port for ESP32 Bridge
+SERIAL_PORT=/dev/ttyUSB0
+BAUD_RATE=115200
+
+# Cloud Backend
+BACKEND_URL=https://chnu-iot.com
+
+# Gateway Token (for admin operations)
+GATEWAY_TOKEN=your_admin_jwt_token_here
+

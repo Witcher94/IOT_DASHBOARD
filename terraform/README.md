@@ -141,3 +141,4 @@ Backend URL: https://iot-backend-xxx-ew1.a.run.app
 - **Cloud SQL**: https://console.cloud.google.com/sql
 - **Logs**: https://console.cloud.google.com/logs
 
+

@@ -1,0 +1,16 @@
+[Unit]
+Description=IoT Mesh Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/gateway
+ExecStart=/usr/bin/python3 /home/pi/gateway/rpi_gateway.py --port /dev/ttyUSB0 --backend https://chnu-iot.com
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+
