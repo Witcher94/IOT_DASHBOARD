@@ -34,6 +34,7 @@ import { Line } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { devicesApi, metricsApi, commandsApi } from '../services/api';
+import GatewayTopology from '../components/GatewayTopology';
 
 // Round temperature to nearest 0.5 (24.1 → 24, 24.5 → 25, 24.7 → 25)
 const roundToHalf = (value: number): number => {
@@ -272,6 +273,11 @@ export default function DeviceDetail() {
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 md:gap-3">
             <h1 className="text-xl md:text-3xl font-bold truncate">{device.name}</h1>
+            {device.device_type === 'gateway' && (
+              <span className="px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-medium shrink-0 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                🌐 Gateway
+              </span>
+            )}
             <span className={`px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-medium shrink-0 ${
               device.is_online 
                 ? 'bg-green-500/20 text-green-400' 
@@ -295,6 +301,18 @@ export default function DeviceDetail() {
           <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
         </button>
       </motion.div>
+
+      {/* Gateway Topology */}
+      {device?.device_type === 'gateway' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-6 md:mb-8"
+        >
+          <GatewayTopology gatewayId={device.id} />
+        </motion.div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">

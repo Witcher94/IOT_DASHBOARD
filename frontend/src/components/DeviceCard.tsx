@@ -67,7 +67,14 @@ export default function DeviceCard({
               <Cpu className={`w-5 h-5 ${isOnline ? 'text-green-400' : 'text-dark-400'}`} />
             </div>
             <div>
-              <h3 className="font-semibold">{device.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">{device.name}</h3>
+                {device.device_type === 'gateway' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                    🌐
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-dark-400">
                 {device.platform || 'ESP'} • {device.chip_id?.slice(0, 8) || 'Unknown'}
               </p>
