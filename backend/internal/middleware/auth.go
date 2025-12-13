@@ -80,9 +80,13 @@ func AdminMiddleware() gin.HandlerFunc {
 
 func DeviceAuthMiddleware(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Accept both X-Device-Token and X-Gateway-Token
 		token := c.GetHeader("X-Device-Token")
 		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Device token required"})
+			token = c.GetHeader("X-Gateway-Token")
+		}
+		if token == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Device token required (X-Device-Token or X-Gateway-Token)"})
 			c.Abort()
 			return
 		}

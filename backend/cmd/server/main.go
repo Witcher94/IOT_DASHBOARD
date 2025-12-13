@@ -151,6 +151,7 @@ func main() {
 		{
 			esp.POST("/metrics", deviceHandler.ReceiveMetrics)
 			esp.POST("/metrics/batch", gatewayHandler.ReceiveBatchMetrics)
+			esp.POST("/gateway/metrics", gatewayHandler.ReceiveBatchMetrics) // Alias for gateway
 			esp.GET("/devices/commands", deviceHandler.GetDeviceCommands)
 			esp.GET("/commands/pending", gatewayHandler.GetPendingCommands)
 			esp.POST("/devices/commands/:id/ack", deviceHandler.AcknowledgeCommand)

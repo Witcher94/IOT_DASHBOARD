@@ -23,9 +23,9 @@ func NewGatewayHandler(db *database.DB, hub *websocket.Hub) *GatewayHandler {
 }
 
 // ReceiveBatchMetrics handles batch metrics from a gateway
-// POST /api/v1/metrics/batch
+// POST /api/v1/metrics/batch or /api/v1/gateway/metrics
 func (h *GatewayHandler) ReceiveBatchMetrics(c *gin.Context) {
-	// Get gateway from context (authenticated by X-Device-Token or X-Gateway-Token)
+	// Get device from context (authenticated by X-Device-Token or X-Gateway-Token)
 	device, exists := c.Get("device")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Gateway not authenticated"})
@@ -33,11 +33,11 @@ func (h *GatewayHandler) ReceiveBatchMetrics(c *gin.Context) {
 	}
 	gateway := device.(*models.Device)
 
-	// Verify it's a gateway
+	// Auto-upgrade to gateway type if not already
 	if gateway.DeviceType != models.DeviceTypeGateway {
-		log.Printf("[BATCH] Device %s is not a gateway (type: %s)", gateway.ID, gateway.DeviceType)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Device is not a gateway"})
-		return
+		log.Printf("[BATCH] Upgrading device %s to gateway type", gateway.ID)
+		gateway.DeviceType = models.DeviceTypeGateway
+		_ = h.db.UpdateDeviceType(c.Request.Context(), gateway.ID, models.DeviceTypeGateway)
 	}
 
 	var payload models.BatchMetricsPayload

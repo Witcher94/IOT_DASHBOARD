@@ -305,3 +305,9 @@ func (db *DB) MarkOfflineDevices(ctx context.Context, timeout time.Duration) err
 	_, err := db.Pool.Exec(ctx, query, time.Now().Add(-timeout))
 	return err
 }
+
+func (db *DB) UpdateDeviceType(ctx context.Context, deviceID uuid.UUID, deviceType string) error {
+	query := `UPDATE devices SET device_type = $1 WHERE id = $2`
+	_, err := db.Pool.Exec(ctx, query, deviceType, deviceID)
+	return err
+}
