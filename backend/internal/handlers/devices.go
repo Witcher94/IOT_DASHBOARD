@@ -427,14 +427,16 @@ func (h *DeviceHandler) GetDeviceCommands(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[CMD TRACE] Returning pending command: ID=%s, Cmd=%s, Status=%s", cmd.ID, cmd.Command, cmd.Status)
+	log.Printf("[CMD TRACE] Returning pending command: ID=%s, Cmd=%s", cmd.ID, cmd.Command)
 
-	// Mark as sent
-	if err := h.db.MarkCommandSent(c.Request.Context(), cmd.ID); err != nil {
-		log.Printf("[CMD TRACE] Failed to mark command as sent: %v", err)
-	} else {
-		log.Printf("[CMD TRACE] Command %s marked as 'sent'", cmd.ID)
-		cmd.Status = "sent"
+	// Mark as sent (ID is already a string from GetPendingCommand)
+	cmdUUID, err := uuid.Parse(cmd.ID)
+	if err == nil {
+		if err := h.db.MarkCommandSent(c.Request.Context(), cmdUUID); err != nil {
+			log.Printf("[CMD TRACE] Failed to mark command as sent: %v", err)
+		} else {
+			log.Printf("[CMD TRACE] Command %s marked as 'sent'", cmd.ID)
+		}
 	}
 
 	c.JSON(http.StatusOK, cmd)
