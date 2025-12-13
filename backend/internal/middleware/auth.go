@@ -104,5 +104,3 @@ func DeviceAuthMiddleware(db *database.DB) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-
