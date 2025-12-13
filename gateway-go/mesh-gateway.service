@@ -1,0 +1,15 @@
+[Unit]
+Description=IoT Mesh Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/home/pi/mesh-gateway --port /dev/ttyUSB0 --backend https://chnu-iot.com
+Restart=always
+RestartSec=10
+Environment=HOME=/home/pi
+
+[Install]
+WantedBy=multi-user.target
+

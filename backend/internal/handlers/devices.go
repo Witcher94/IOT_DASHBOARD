@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -220,8 +221,11 @@ func (h *DeviceHandler) CreateCommand(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[CMD TRACE] CreateCommand called for device %s", deviceID)
+
 	device, err := h.deviceService.GetDevice(c.Request.Context(), deviceID)
 	if err != nil {
+		log.Printf("[CMD TRACE] Device not found: %s", deviceID)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
 		return
 	}
@@ -230,22 +234,28 @@ func (h *DeviceHandler) CreateCommand(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	isAdmin, _ := c.Get("is_admin")
 	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
+		log.Printf("[CMD TRACE] Access denied for user %s on device %s", userID, deviceID)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
 	var req models.CreateCommandRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[CMD TRACE] Invalid request body: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[CMD TRACE] Creating command '%s' for device %s (%s)", req.Command, deviceID, device.Name)
+
 	cmd, err := h.deviceService.CreateCommand(c.Request.Context(), deviceID, &req)
 	if err != nil {
+		log.Printf("[CMD TRACE] Failed to create command: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[CMD TRACE] Command created: ID=%s, Status=%s", cmd.ID, cmd.Status)
 	c.JSON(http.StatusCreated, cmd)
 }
 
@@ -399,11 +409,23 @@ func (h *DeviceHandler) GetDeviceCommands(c *gin.Context) {
 	device, _ := c.Get("device")
 	dev := device.(*models.Device)
 
+	log.Printf("[CMD TRACE] GetDeviceCommands called by device %s (%s)", dev.ID, dev.Name)
+
 	cmd, err := h.deviceService.GetPendingCommand(c.Request.Context(), dev.ID)
 	if err != nil {
-		// No pending commands
+		log.Printf("[CMD TRACE] No pending commands for device %s", dev.ID)
 		c.JSON(http.StatusOK, gin.H{})
 		return
+	}
+
+	log.Printf("[CMD TRACE] Returning pending command: ID=%s, Cmd=%s, Status=%s", cmd.ID, cmd.Command, cmd.Status)
+
+	// Mark as sent
+	if err := h.db.MarkCommandSent(c.Request.Context(), cmd.ID); err != nil {
+		log.Printf("[CMD TRACE] Failed to mark command as sent: %v", err)
+	} else {
+		log.Printf("[CMD TRACE] Command %s marked as 'sent'", cmd.ID)
+		cmd.Status = "sent"
 	}
 
 	c.JSON(http.StatusOK, cmd)
@@ -416,18 +438,25 @@ func (h *DeviceHandler) AcknowledgeCommand(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[CMD TRACE] AcknowledgeCommand called for command %s", commandID)
+
 	var req struct {
 		Status string `json:"status"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[CMD TRACE] Invalid request body: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[CMD TRACE] Acknowledging command %s with status '%s'", commandID, req.Status)
+
 	if err := h.deviceService.AcknowledgeCommand(c.Request.Context(), commandID, req.Status); err != nil {
+		log.Printf("[CMD TRACE] Failed to acknowledge: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("[CMD TRACE] Command %s acknowledged successfully", commandID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

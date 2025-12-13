@@ -20,6 +20,11 @@ import { useSettingsStore } from '../contexts/settingsStore';
 import type { Metric } from '../types';
 import { useState } from 'react';
 
+// Round temperature to nearest 0.5 (24.1 → 24, 24.5 → 25, 24.7 → 25)
+const roundToHalf = (value: number): number => {
+  return Math.round(value * 2) / 2;
+};
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -161,7 +166,7 @@ export default function MetricChartModal({ isOpen, onClose, metricType }: Metric
   const getMetricValue = (metric: Metric & { deviceName?: string }) => {
     switch (metricType) {
       case 'temperature':
-        return metric.temperature;
+        return metric.temperature != null ? roundToHalf(metric.temperature) : null;
       case 'humidity':
         return metric.humidity;
       case 'rssi':
@@ -171,6 +176,15 @@ export default function MetricChartModal({ isOpen, onClose, metricType }: Metric
       default:
         return null;
     }
+  };
+
+  // Format labels based on period - show dates for 7D
+  const formatChartLabel = (dateStr: string) => {
+    const date = new Date(dateStr);
+    if (selectedPeriod === '168h') {
+      return format(date, 'dd.MM HH:mm');
+    }
+    return format(date, 'HH:mm');
   };
 
   // Group metrics by device for multi-line chart
@@ -193,7 +207,7 @@ export default function MetricChartModal({ isOpen, onClose, metricType }: Metric
   ];
 
   const chartData = {
-    labels: allMetrics?.map((m) => format(new Date(m.created_at), 'HH:mm')) || [],
+    labels: allMetrics?.map((m) => formatChartLabel(m.created_at)) || [],
     datasets: selectedDeviceId === 'all' && Object.keys(groupedMetrics).length > 1
       ? Object.entries(groupedMetrics).map(([deviceName, metrics], index) => ({
           label: deviceName,
@@ -251,7 +265,12 @@ export default function MetricChartModal({ isOpen, onClose, metricType }: Metric
     scales: {
       x: {
         grid: { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#6b7280', maxRotation: 45 },
+        ticks: { 
+          color: '#6b7280', 
+          maxRotation: selectedPeriod === '168h' ? 45 : 0,
+          maxTicksLimit: selectedPeriod === '168h' ? 14 : 24,
+          font: { size: 10 },
+        },
       },
       y: {
         grid: { color: 'rgba(255,255,255,0.05)' },

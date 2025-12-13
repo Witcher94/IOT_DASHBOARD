@@ -35,8 +35,10 @@ export default function DeviceCard({
   const { formatRelative } = useDateFormat();
   const t = useTranslation();
 
+  // Round to nearest 0.5 (24.1 → 24, 24.5 → 25)
+  const roundToHalf = (value: number): number => Math.round(value * 2) / 2;
   const formatTemp = (temp?: number | null) => 
-    temp != null ? `${temp.toFixed(1)}°C` : '--°C';
+    temp != null ? `${roundToHalf(temp).toFixed(1)}°C` : '--°C';
   const formatHum = (hum?: number | null) => 
     hum != null ? `${hum.toFixed(0)}%` : '--%';
   const formatRssi = (r?: number | null) => 

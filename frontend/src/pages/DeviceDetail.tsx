@@ -34,6 +34,11 @@ import { Line } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { devicesApi, metricsApi, commandsApi } from '../services/api';
+
+// Round temperature to nearest 0.5 (24.1 → 24, 24.5 → 25, 24.7 → 25)
+const roundToHalf = (value: number): number => {
+  return Math.round(value * 2) / 2;
+};
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useTranslation } from '../contexts/settingsStore';
 import type { WebSocketMessage, Metric } from '../types';
@@ -166,18 +171,29 @@ export default function DeviceDetail() {
 
   const latestMetric = metrics?.[metrics.length - 1];
 
+  // Format labels based on period - show dates for 7D
+  const formatChartLabel = (dateStr: string) => {
+    const date = new Date(dateStr);
+    if (selectedPeriod === '168h') {
+      return format(date, 'dd.MM HH:mm');
+    }
+    return format(date, 'HH:mm');
+  };
+
   const chartData = {
-    labels: metrics?.map((m: Metric) => format(new Date(m.created_at), 'HH:mm')) || [],
+    labels: metrics?.map((m: Metric) => formatChartLabel(m.created_at)) || [],
     datasets: [
       {
         label: `${t.temperature} (°C)`,
         // null/undefined = no data, Chart.js will skip these points
-        data: metrics?.map((m: Metric) => m.temperature ?? null) || [],
+        // Round temperature to 0.5
+        data: metrics?.map((m: Metric) => m.temperature != null ? roundToHalf(m.temperature) : null) || [],
         borderColor: '#f97316',
         backgroundColor: 'rgba(249, 115, 22, 0.1)',
         fill: true,
         tension: 0.4,
         spanGaps: false, // Don't connect line over null/missing values
+        pointRadius: selectedPeriod === '168h' ? 1 : 3,
       },
       {
         label: `${t.humidity} (%)`,
@@ -187,6 +203,7 @@ export default function DeviceDetail() {
         fill: true,
         tension: 0.4,
         spanGaps: false, // Don't connect line over null/missing values
+        pointRadius: selectedPeriod === '168h' ? 1 : 3,
       },
     ],
   };
@@ -197,17 +214,30 @@ export default function DeviceDetail() {
     plugins: {
       legend: {
         position: 'top' as const,
-        labels: { color: '#9ca3af' },
+        labels: { 
+          color: '#9ca3af',
+          boxWidth: 12,
+          padding: 8,
+          font: { size: 11 },
+        },
       },
     },
     scales: {
       x: {
         grid: { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#6b7280' },
+        ticks: { 
+          color: '#6b7280',
+          maxRotation: selectedPeriod === '168h' ? 45 : 0,
+          maxTicksLimit: selectedPeriod === '168h' ? 14 : 12,
+          font: { size: 10 },
+        },
       },
       y: {
         grid: { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#6b7280' },
+        ticks: { 
+          color: '#6b7280',
+          font: { size: 10 },
+        },
       },
     },
   };
@@ -226,23 +256,23 @@ export default function DeviceDetail() {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-6 lg:p-8">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-4 mb-8"
+        className="flex items-start md:items-center gap-3 md:gap-4 mb-6 md:mb-8"
       >
         <button
           onClick={() => navigate('/devices')}
-          className="p-2 rounded-lg hover:bg-dark-700 transition-colors"
+          className="p-2 rounded-lg hover:bg-dark-700 transition-colors shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{device.name}</h1>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <h1 className="text-xl md:text-3xl font-bold truncate">{device.name}</h1>
+            <span className={`px-2 md:px-3 py-0.5 md:py-1 rounded-full text-xs font-medium shrink-0 ${
               device.is_online 
                 ? 'bg-green-500/20 text-green-400' 
                 : 'bg-red-500/20 text-red-400'
@@ -250,8 +280,8 @@ export default function DeviceDetail() {
               {device.is_online ? t.online : 'Offline'}
             </span>
           </div>
-          <p className="text-dark-400 text-sm mt-1">
-            {device.platform} • {device.firmware} • {device.mac}
+          <p className="text-dark-400 text-xs md:text-sm mt-1 truncate">
+            {device.platform} • {device.firmware} • <span className="hidden sm:inline">{device.mac}</span>
           </p>
         </div>
         <button
@@ -260,17 +290,17 @@ export default function DeviceDetail() {
               deleteMutation.mutate();
             }
           }}
-          className="p-2.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
+          className="p-2 md:p-2.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
         >
-          <Trash2 className="w-5 h-5" />
+          <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
         </button>
       </motion.div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {[
-          { label: t.temperature, value: latestMetric?.temperature?.toFixed(1) ?? '--', unit: '°C', icon: Thermometer, color: 'text-orange-400' },
-          { label: t.humidity, value: latestMetric?.humidity?.toFixed(1) ?? '--', unit: '%', icon: Droplets, color: 'text-cyan-400' },
+          { label: t.temperature, value: latestMetric?.temperature != null ? roundToHalf(latestMetric.temperature).toFixed(1) : '--', unit: '°C', icon: Thermometer, color: 'text-orange-400' },
+          { label: t.humidity, value: latestMetric?.humidity?.toFixed(0) ?? '--', unit: '%', icon: Droplets, color: 'text-cyan-400' },
           { label: t.wifiSignal, value: latestMetric?.rssi ?? '--', unit: 'dBm', icon: Wifi, color: 'text-purple-400' },
           { label: t.freeMemory, value: latestMetric?.free_heap ? (latestMetric.free_heap / 1024).toFixed(0) : '--', unit: 'KB', icon: Cpu, color: 'text-green-400' },
         ].map((stat, i) => (
@@ -279,14 +309,14 @@ export default function DeviceDetail() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="glass rounded-xl p-4"
+            className="glass rounded-lg md:rounded-xl p-3 md:p-4"
           >
-            <div className="flex items-center gap-2 mb-2">
-              <stat.icon className={`w-4 h-4 ${stat.color}`} />
-              <span className="text-sm text-dark-400">{stat.label}</span>
+            <div className="flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2">
+              <stat.icon className={`w-3.5 h-3.5 md:w-4 md:h-4 ${stat.color}`} />
+              <span className="text-xs md:text-sm text-dark-400 truncate">{stat.label}</span>
             </div>
-            <p className="text-2xl font-bold">
-              {stat.value}<span className="text-sm text-dark-500 ml-1">{stat.unit}</span>
+            <p className="text-xl md:text-2xl font-bold">
+              {stat.value}<span className="text-xs md:text-sm text-dark-500 ml-0.5 md:ml-1">{stat.unit}</span>
             </p>
           </motion.div>
         ))}
@@ -297,16 +327,16 @@ export default function DeviceDetail() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="glass rounded-2xl p-6 mb-8"
+        className="glass rounded-xl md:rounded-2xl p-4 md:p-6 mb-6 md:mb-8"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">{t.sensorData}</h2>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <h2 className="text-base md:text-lg font-semibold">{t.sensorData}</h2>
+          <div className="flex items-center gap-1 md:gap-2 overflow-x-auto">
             {periods.map((p) => (
               <button
                 key={p.value}
                 onClick={() => setSelectedPeriod(p.value)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors whitespace-nowrap ${
                   selectedPeriod === p.value
                     ? 'bg-primary-500/20 text-primary-400'
                     : 'text-dark-400 hover:text-white hover:bg-dark-700'
@@ -317,12 +347,12 @@ export default function DeviceDetail() {
             ))}
           </div>
         </div>
-        <div className="h-72">
+        <div className="h-48 md:h-72">
           <Line data={chartData} options={chartOptions} />
         </div>
       </motion.div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid gap-4 md:gap-6 md:grid-cols-2">
         {/* WiFi Networks */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
