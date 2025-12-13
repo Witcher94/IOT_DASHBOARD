@@ -68,6 +68,7 @@ func main() {
 	dashboardHandler := handlers.NewDashboardHandler(db)
 	adminHandler := handlers.NewAdminHandler(db)
 	wsHandler := handlers.NewWebSocketHandler(hub)
+	gatewayHandler := handlers.NewGatewayHandler(db, hub)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -149,8 +150,17 @@ func main() {
 		esp.Use(middleware.DeviceAuthMiddleware(db))
 		{
 			esp.POST("/metrics", deviceHandler.ReceiveMetrics)
+			esp.POST("/metrics/batch", gatewayHandler.ReceiveBatchMetrics)
 			esp.GET("/devices/commands", deviceHandler.GetDeviceCommands)
+			esp.GET("/commands/pending", gatewayHandler.GetPendingCommands)
 			esp.POST("/devices/commands/:id/ack", deviceHandler.AcknowledgeCommand)
+		}
+
+		// Gateway topology routes (requires user auth)
+		gateways := protected.Group("/gateways")
+		{
+			gateways.GET("/:id/topology", gatewayHandler.GetGatewayTopology)
+			gateways.POST("/:id/nodes/:nodeId/commands", gatewayHandler.SendCommandToMeshNode)
 		}
 	}
 

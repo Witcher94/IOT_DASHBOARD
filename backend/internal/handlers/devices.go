@@ -39,11 +39,20 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 		return
 	}
 
-	device, err := h.deviceService.CreateDevice(c.Request.Context(), userID.(uuid.UUID), req.Name)
+	deviceType := req.DeviceType
+	if deviceType == "" {
+		deviceType = models.DeviceTypeSimple
+	}
+
+	log.Printf("[DEVICE] Creating %s device '%s' for user %s", deviceType, req.Name, userID)
+
+	device, err := h.deviceService.CreateDevice(c.Request.Context(), userID.(uuid.UUID), req.Name, deviceType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Printf("[DEVICE] Created device %s (type: %s, token: %s...)", device.ID, device.DeviceType, device.Token[:8])
 
 	// Return device with token (only on creation)
 	response := models.DeviceWithToken{

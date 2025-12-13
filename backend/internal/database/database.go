@@ -107,6 +107,12 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT TRUE`,
 		// Notification channel per user
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_channel_id VARCHAR(255)`,
+		// Device type and gateway support
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_type VARCHAR(32) DEFAULT 'simple_device'`,
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS gateway_id UUID REFERENCES devices(id) ON DELETE SET NULL`,
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS mesh_node_id BIGINT`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_gateway_id ON devices(gateway_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type)`,
 	}
 
 	for _, migration := range migrations {

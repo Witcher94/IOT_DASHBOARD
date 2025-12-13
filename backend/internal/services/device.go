@@ -28,18 +28,23 @@ func (s *DeviceService) GenerateToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func (s *DeviceService) CreateDevice(ctx context.Context, userID uuid.UUID, name string) (*models.Device, error) {
+func (s *DeviceService) CreateDevice(ctx context.Context, userID uuid.UUID, name string, deviceType string) (*models.Device, error) {
 	token, err := s.GenerateToken()
 	if err != nil {
 		return nil, err
+	}
+
+	if deviceType == "" {
+		deviceType = models.DeviceTypeSimple
 	}
 
 	device := &models.Device{
 		UserID:      userID,
 		Name:        name,
 		Token:       token,
+		DeviceType:  deviceType,
 		DHTEnabled:  true,
-		MeshEnabled: true,
+		MeshEnabled: deviceType == models.DeviceTypeGateway, // Gateway has mesh enabled
 	}
 
 	if err := s.db.CreateDevice(ctx, device); err != nil {

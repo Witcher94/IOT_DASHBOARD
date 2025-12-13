@@ -9,13 +9,18 @@ import (
 )
 
 func (db *DB) CreateDevice(ctx context.Context, device *models.Device) error {
+	deviceType := device.DeviceType
+	if deviceType == "" {
+		deviceType = models.DeviceTypeSimple
+	}
 	query := `
-		INSERT INTO devices (user_id, name, token, dht_enabled, mesh_enabled)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO devices (user_id, name, token, dht_enabled, mesh_enabled, device_type, gateway_id, mesh_node_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at
 	`
 	return db.Pool.QueryRow(ctx, query,
 		device.UserID, device.Name, device.Token, device.DHTEnabled, device.MeshEnabled,
+		deviceType, device.GatewayID, device.MeshNodeID,
 	).Scan(&device.ID, &device.CreatedAt, &device.UpdatedAt)
 }
 
@@ -24,6 +29,7 @@ func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, 
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
 			   created_at, updated_at
 		FROM devices WHERE id = $1
 	`
@@ -33,6 +39,7 @@ func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, 
 		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
+		&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
 		&device.CreatedAt, &device.UpdatedAt,
 	)
 	if err != nil {
@@ -46,6 +53,7 @@ func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Devic
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
 			   created_at, updated_at
 		FROM devices WHERE token = $1
 	`
@@ -55,6 +63,7 @@ func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Devic
 		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
+		&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
 		&device.CreatedAt, &device.UpdatedAt,
 	)
 	if err != nil {
@@ -68,8 +77,9 @@ func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]model
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
 			   created_at, updated_at
-		FROM devices WHERE user_id = $1 ORDER BY created_at DESC
+		FROM devices WHERE user_id = $1 ORDER BY device_type DESC, created_at DESC
 	`
 	rows, err := db.Pool.Query(ctx, query, userID)
 	if err != nil {
@@ -85,6 +95,7 @@ func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]model
 			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
+			&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
 			&device.CreatedAt, &device.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -99,8 +110,9 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
 			   created_at, updated_at
-		FROM devices ORDER BY created_at DESC
+		FROM devices ORDER BY device_type DESC, created_at DESC
 	`
 	rows, err := db.Pool.Query(ctx, query)
 	if err != nil {
@@ -116,6 +128,7 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
+			&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
 			&device.CreatedAt, &device.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -123,6 +136,100 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 		devices = append(devices, device)
 	}
 	return devices, nil
+}
+
+// GetMeshNodesByGatewayID returns all mesh nodes belonging to a gateway
+func (db *DB) GetMeshNodesByGatewayID(ctx context.Context, gatewayID uuid.UUID) ([]models.Device, error) {
+	query := `
+		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+			   is_online, last_seen, dht_enabled, mesh_enabled,
+			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   COALESCE(device_type, 'mesh_node'), gateway_id, mesh_node_id,
+			   created_at, updated_at
+		FROM devices WHERE gateway_id = $1 ORDER BY mesh_node_id
+	`
+	rows, err := db.Pool.Query(ctx, query, gatewayID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var devices []models.Device
+	for rows.Next() {
+		var device models.Device
+		if err := rows.Scan(
+			&device.ID, &device.UserID, &device.Name, &device.Token,
+			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
+			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
+			&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
+			&device.CreatedAt, &device.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		devices = append(devices, device)
+	}
+	return devices, nil
+}
+
+// GetOrCreateMeshNode finds or creates a mesh node by mesh_node_id and gateway_id
+func (db *DB) GetOrCreateMeshNode(ctx context.Context, gatewayID uuid.UUID, meshNodeID uint32, nodeName string) (*models.Device, error) {
+	// First try to find existing
+	query := `
+		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+			   is_online, last_seen, dht_enabled, mesh_enabled,
+			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
+			   COALESCE(device_type, 'mesh_node'), gateway_id, mesh_node_id,
+			   created_at, updated_at
+		FROM devices WHERE gateway_id = $1 AND mesh_node_id = $2
+	`
+	device := &models.Device{}
+	err := db.Pool.QueryRow(ctx, query, gatewayID, meshNodeID).Scan(
+		&device.ID, &device.UserID, &device.Name, &device.Token,
+		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
+		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
+		&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
+		&device.CreatedAt, &device.UpdatedAt,
+	)
+	if err == nil {
+		return device, nil
+	}
+
+	// Get gateway to inherit user_id
+	gateway, err := db.GetDeviceByID(ctx, gatewayID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create new mesh node
+	device = &models.Device{
+		UserID:      gateway.UserID,
+		Name:        nodeName,
+		Token:       uuid.New().String() + uuid.New().String()[:32], // 64 char token
+		DeviceType:  models.DeviceTypeMeshNode,
+		GatewayID:   &gatewayID,
+		MeshNodeID:  &meshNodeID,
+		DHTEnabled:  true,
+		MeshEnabled: true,
+	}
+	if err := db.CreateDevice(ctx, device); err != nil {
+		return nil, err
+	}
+
+	return device, nil
+}
+
+// UpdateMeshNodeMetrics updates metrics for a mesh node
+func (db *DB) UpdateMeshNodeMetrics(ctx context.Context, deviceID uuid.UUID, chipID, mac, platform, firmware string) error {
+	query := `
+		UPDATE devices SET
+			chip_id = $2, mac = $3, platform = $4, firmware = $5,
+			is_online = true, last_seen = NOW(), updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := db.Pool.Exec(ctx, query, deviceID, chipID, mac, platform, firmware)
+	return err
 }
 
 func (db *DB) UpdateAlertSettings(ctx context.Context, deviceID uuid.UUID, req *models.UpdateAlertSettingsRequest) error {

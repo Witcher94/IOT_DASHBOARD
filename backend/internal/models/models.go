@@ -19,12 +19,22 @@ type User struct {
 	UpdatedAt             time.Time `json:"updated_at"`
 }
 
+// DeviceType types
+const (
+	DeviceTypeSimple  = "simple_device"
+	DeviceTypeGateway = "gateway"
+	DeviceTypeMeshNode = "mesh_node"
+)
+
 // Device представляє IoT пристрій
 type Device struct {
 	ID           uuid.UUID  `json:"id"`
 	UserID       uuid.UUID  `json:"user_id"`
 	Name         string     `json:"name"`
 	Token        string     `json:"-"` // Hidden by default, use DeviceWithToken for responses that need it
+	DeviceType   string     `json:"device_type"` // simple_device, gateway, mesh_node
+	GatewayID    *uuid.UUID `json:"gateway_id,omitempty"` // Parent gateway for mesh_node
+	MeshNodeID   *uint32    `json:"mesh_node_id,omitempty"` // painlessMesh node ID
 	ChipID       *string    `json:"chip_id,omitempty"`
 	MAC          *string    `json:"mac,omitempty"`
 	Platform     *string    `json:"platform,omitempty"`
@@ -41,6 +51,8 @@ type Device struct {
 	AlertPolicyID   string   `json:"-"` // Internal, not exposed to API
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+	// Nested mesh nodes (only populated for gateways)
+	MeshNodes    []Device   `json:"mesh_nodes,omitempty"`
 }
 
 // DeviceWithToken - Device response that includes the token (for create/regenerate)
@@ -142,7 +154,38 @@ type DeviceCommand struct {
 
 // CreateDeviceRequest запит на створення пристрою
 type CreateDeviceRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name       string `json:"name" binding:"required"`
+	DeviceType string `json:"device_type"` // simple_device, gateway (default: simple_device)
+}
+
+// BatchMetricsPayload payload від gateway з метриками всіх нод
+type BatchMetricsPayload struct {
+	GatewayID string            `json:"gateway_id"`
+	Timestamp time.Time         `json:"timestamp"`
+	Nodes     []NodeMetricsBatch `json:"nodes"`
+}
+
+// NodeMetricsBatch метрики однієї ноди в batch
+type NodeMetricsBatch struct {
+	NodeID      uint32  `json:"node_id"`       // painlessMesh node ID
+	NodeName    string  `json:"node_name"`
+	ChipID      string  `json:"chip_id"`
+	MAC         string  `json:"mac"`
+	Platform    string  `json:"platform"`
+	Firmware    string  `json:"firmware"`
+	Temperature float64 `json:"temperature"`
+	Humidity    float64 `json:"humidity"`
+	FreeHeap    int64   `json:"free_heap"`
+	RSSI        int     `json:"rssi"`
+	DHTEnabled  bool    `json:"dht_enabled"`
+}
+
+// GatewayTopology структура для відображення топології
+type GatewayTopology struct {
+	Gateway    Device   `json:"gateway"`
+	MeshNodes  []Device `json:"mesh_nodes"`
+	TotalNodes int      `json:"total_nodes"`
+	OnlineNodes int     `json:"online_nodes"`
 }
 
 // UpdateAlertSettingsRequest запит на оновлення налаштувань алертів
