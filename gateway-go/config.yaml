@@ -1,0 +1,29 @@
+# Mesh Gateway Configuration
+# This file should be placed at /etc/mesh-gateway/config.yaml
+
+# Serial connection to ESP32 Bridge
+serial:
+  port: /dev/ttyUSB0
+  baud: 115200
+
+# Cloud backend
+backend:
+  url: https://chnu-iot.com
+  token: ""  # Set your gateway token here!
+  batch_interval: 30  # seconds
+
+# Local web UI
+web:
+  port: 8080
+  enabled: true
+
+# Logging
+logging:
+  level: info  # debug, info, warn, error
+  file: /var/log/mesh-gateway.log
+
+# Node management
+nodes:
+  timeout: 120  # Mark offline after N seconds without data
+  auto_register: true  # Auto-register new nodes in backend
+

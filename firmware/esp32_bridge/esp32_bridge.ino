@@ -1,21 +1,72 @@
-// ===== ESP32 Mesh Bridge v1.3.0 =====
-// painlessMesh + Serial to RPi Gateway
+// ===== ESP32 Mesh Bridge + Node v1.4.0 =====
+// ROOT node: Gateway to RPi + sends own metrics
 // Requires ESP32 Core 2.0.17!
 
 #include <painlessMesh.h>
 #include <ArduinoJson.h>
+#include <DHT.h>
 
-#define FIRMWARE_VERSION "bridge-1.3.0"
+#define FIRMWARE_VERSION "bridge-1.4.0"
 #define MESH_PREFIX   "iot_mesh"
 #define MESH_PASSWORD "mesh12345"
 #define MESH_PORT     5555
 #define MESH_CHANNEL  6
 #define SERIAL_BAUD   115200
 
-painlessMesh mesh;
-uint32_t nodeCount = 0;
-unsigned long lastHeartbeat = 0;
+// Hardware
+#define DHTPIN       15
+#define DHTTYPE      DHT22
+#define LED_PIN      2
 
+painlessMesh mesh;
+DHT dht(DHTPIN, DHTTYPE);
+
+uint32_t nodeCount = 0;
+unsigned long lastMetrics = 0;
+unsigned long lastHeartbeat = 0;
+float lastTemp = NAN;
+float lastHum = NAN;
+
+#define METRICS_INTERVAL 30000
+#define HEARTBEAT_INTERVAL 30000
+
+// Read DHT sensor
+void readSensors() {
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+    if (!isnan(t)) lastTemp = t;
+    if (!isnan(h)) lastHum = h;
+}
+
+// Send own metrics to RPi (as mesh_data from self)
+void sendOwnMetrics() {
+    readSensors();
+    
+    StaticJsonDocument<512> doc;
+    doc["type"] = "mesh_data";
+    doc["from"] = mesh.getNodeId();
+    
+    JsonObject data = doc.createNestedObject("data");
+    data["msg_type"] = "metrics";
+    data["node_name"] = "Bridge";
+    data["node_id"] = mesh.getNodeId();
+    if (!isnan(lastTemp)) data["temperature"] = lastTemp;
+    if (!isnan(lastHum)) data["humidity"] = lastHum;
+    data["chip_id"] = String((uint32_t)ESP.getEfuseMac(), HEX);
+    data["mac"] = WiFi.macAddress();
+    data["firmware"] = FIRMWARE_VERSION;
+    data["platform"] = "ESP32";
+    data["free_heap"] = ESP.getFreeHeap();
+    data["is_root"] = true;
+    
+    String out;
+    serializeJson(doc, out);
+    Serial.println(out);
+    
+    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+}
+
+// Forward mesh data to RPi
 void receivedCallback(uint32_t from, String &msg) {
     StaticJsonDocument<512> doc;
     doc["type"] = "mesh_data";
@@ -44,8 +95,8 @@ void droppedConnectionCallback(uint32_t nodeId) {
 }
 
 void sendHeartbeat() {
-    Serial.printf("{\"type\":\"heartbeat\",\"node_id\":%u,\"nodes\":%u,\"heap\":%u,\"uptime\":%lu}\n",
-        mesh.getNodeId(), nodeCount, ESP.getFreeHeap(), millis());
+    Serial.printf("{\"type\":\"heartbeat\",\"node_id\":%u,\"nodes\":%u,\"heap\":%u,\"uptime\":%lu,\"temp\":%.1f,\"hum\":%.1f}\n",
+        mesh.getNodeId(), nodeCount, ESP.getFreeHeap(), millis(), lastTemp, lastHum);
 }
 
 void processSerial() {
@@ -80,6 +131,9 @@ void setup() {
     Serial.begin(SERIAL_BAUD);
     delay(1000);
     
+    pinMode(LED_PIN, OUTPUT);
+    dht.begin();
+    
     mesh.setDebugMsgTypes(ERROR | STARTUP);
     mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP, MESH_CHANNEL);
     mesh.setRoot(true);
@@ -92,6 +146,7 @@ void setup() {
     Serial.printf("{\"type\":\"ready\",\"node_id\":%u,\"firmware\":\"%s\"}\n", 
         mesh.getNodeId(), FIRMWARE_VERSION);
     
+    lastMetrics = millis();
     lastHeartbeat = millis();
 }
 
@@ -99,7 +154,14 @@ void loop() {
     mesh.update();
     processSerial();
     
-    if (millis() - lastHeartbeat > 30000) {
+    // Send own metrics every 30 sec
+    if (millis() - lastMetrics > METRICS_INTERVAL) {
+        sendOwnMetrics();
+        lastMetrics = millis();
+    }
+    
+    // Heartbeat every 30 sec
+    if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
         sendHeartbeat();
         lastHeartbeat = millis();
     }

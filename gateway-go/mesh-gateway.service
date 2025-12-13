@@ -1,15 +1,38 @@
 [Unit]
-Description=IoT Mesh Gateway
-After=network.target
+Description=IoT Mesh Gateway - Bridge ESP32 mesh to cloud
+Documentation=https://github.com/yourusername/diploma
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=pi
-ExecStart=/home/pi/mesh-gateway --port /dev/ttyUSB0 --backend https://chnu-iot.com
+User=root
+Group=dialout
+
+# Config file
+EnvironmentFile=-/etc/mesh-gateway/environment
+
+# Main command
+ExecStart=/usr/local/bin/mesh-gateway \
+    --config /etc/mesh-gateway/config.yaml
+
+# Restart on failure
 Restart=always
 RestartSec=10
-Environment=HOME=/home/pi
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mesh-gateway
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log /etc/mesh-gateway
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
-

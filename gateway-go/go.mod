@@ -2,7 +2,10 @@ module github.com/pfaka/iot-gateway
 
 go 1.21
 
-require go.bug.st/serial v1.6.1
+require (
+	go.bug.st/serial v1.6.1
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/creack/goselect v0.1.2 // indirect
