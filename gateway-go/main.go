@@ -1076,11 +1076,29 @@ document.getElementById('tokenForm').onsubmit = async (e) => {
 </script>
 </body>
 </html>`,
-		func() string { if hasToken { return "success" } else { return "warning" } }(),
-		func() string { if hasToken { return "✅ Token configured" } else { return "⚠️ No token - metrics won't be sent to cloud" } }(),
+		func() string {
+			if hasToken {
+				return "success"
+			} else {
+				return "warning"
+			}
+		}(),
+		func() string {
+			if hasToken {
+				return "✅ Token configured"
+			} else {
+				return "⚠️ No token - metrics won't be sent to cloud"
+			}
+		}(),
 		g.config.SerialPort,
 		g.config.BackendURL,
-		func() string { if hasToken { return tokenMasked } else { return "(not set)" } }())
+		func() string {
+			if hasToken {
+				return tokenMasked
+			} else {
+				return "(not set)"
+			}
+		}())
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
