@@ -21,38 +21,38 @@ type User struct {
 
 // DeviceType types
 const (
-	DeviceTypeSimple  = "simple_device"
-	DeviceTypeGateway = "gateway"
+	DeviceTypeSimple   = "simple_device"
+	DeviceTypeGateway  = "gateway"
 	DeviceTypeMeshNode = "mesh_node"
 )
 
 // Device представляє IoT пристрій
 type Device struct {
-	ID           uuid.UUID  `json:"id"`
-	UserID       uuid.UUID  `json:"user_id"`
-	Name         string     `json:"name"`
-	Token        string     `json:"-"` // Hidden by default, use DeviceWithToken for responses that need it
-	DeviceType   string     `json:"device_type"` // simple_device, gateway, mesh_node
-	GatewayID    *uuid.UUID `json:"gateway_id,omitempty"` // Parent gateway for mesh_node
-	MeshNodeID   *uint32    `json:"mesh_node_id,omitempty"` // painlessMesh node ID
-	ChipID       *string    `json:"chip_id,omitempty"`
-	MAC          *string    `json:"mac,omitempty"`
-	Platform     *string    `json:"platform,omitempty"`
-	Firmware     *string    `json:"firmware,omitempty"`
-	IsOnline     bool       `json:"is_online"`
-	LastSeen     *time.Time `json:"last_seen,omitempty"`
-	DHTEnabled   bool       `json:"dht_enabled"`
-	MeshEnabled  bool       `json:"mesh_enabled"`
+	ID          uuid.UUID  `json:"id"`
+	UserID      uuid.UUID  `json:"user_id"`
+	Name        string     `json:"name"`
+	Token       string     `json:"-"`                      // Hidden by default, use DeviceWithToken for responses that need it
+	DeviceType  string     `json:"device_type"`            // simple_device, gateway, mesh_node
+	GatewayID   *uuid.UUID `json:"gateway_id,omitempty"`   // Parent gateway for mesh_node
+	MeshNodeID  *uint32    `json:"mesh_node_id,omitempty"` // painlessMesh node ID
+	ChipID      *string    `json:"chip_id,omitempty"`
+	MAC         *string    `json:"mac,omitempty"`
+	Platform    *string    `json:"platform,omitempty"`
+	Firmware    *string    `json:"firmware,omitempty"`
+	IsOnline    bool       `json:"is_online"`
+	LastSeen    *time.Time `json:"last_seen,omitempty"`
+	DHTEnabled  bool       `json:"dht_enabled"`
+	MeshEnabled bool       `json:"mesh_enabled"`
 	// Alert settings
-	AlertsEnabled    bool     `json:"alerts_enabled"`
-	AlertTempMin     *float64 `json:"alert_temp_min,omitempty"`
-	AlertTempMax     *float64 `json:"alert_temp_max,omitempty"`
-	AlertHumidityMax *float64 `json:"alert_humidity_max,omitempty"`
-	AlertPolicyID   string   `json:"-"` // Internal, not exposed to API
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	AlertsEnabled    bool      `json:"alerts_enabled"`
+	AlertTempMin     *float64  `json:"alert_temp_min,omitempty"`
+	AlertTempMax     *float64  `json:"alert_temp_max,omitempty"`
+	AlertHumidityMax *float64  `json:"alert_humidity_max,omitempty"`
+	AlertPolicyID    string    `json:"-"` // Internal, not exposed to API
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 	// Nested mesh nodes (only populated for gateways)
-	MeshNodes    []Device   `json:"mesh_nodes,omitempty"`
+	MeshNodes []Device `json:"mesh_nodes,omitempty"`
 }
 
 // DeviceWithToken - Device response that includes the token (for create/regenerate)
@@ -63,16 +63,16 @@ type DeviceWithToken struct {
 
 // Metric представляє метрики з пристрою
 type Metric struct {
-	ID          uuid.UUID       `json:"id"`
-	DeviceID    uuid.UUID       `json:"device_id"`
-	Temperature *float64        `json:"temperature,omitempty"`
-	Humidity    *float64        `json:"humidity,omitempty"`
-	RSSI        *int            `json:"rssi,omitempty"`
-	FreeHeap    *int64          `json:"free_heap,omitempty"`
-	Uptime      *int64          `json:"uptime,omitempty"`
-	WifiScan    []WifiNetwork   `json:"wifi_scan,omitempty"`
-	MeshNodes   []MeshNeighbor  `json:"mesh_neighbors,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
+	ID          uuid.UUID      `json:"id"`
+	DeviceID    uuid.UUID      `json:"device_id"`
+	Temperature *float64       `json:"temperature,omitempty"`
+	Humidity    *float64       `json:"humidity,omitempty"`
+	RSSI        *int           `json:"rssi,omitempty"`
+	FreeHeap    *int64         `json:"free_heap,omitempty"`
+	Uptime      *int64         `json:"uptime,omitempty"`
+	WifiScan    []WifiNetwork  `json:"wifi_scan,omitempty"`
+	MeshNodes   []MeshNeighbor `json:"mesh_neighbors,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 // WifiNetwork представляє знайдену WiFi мережу
@@ -91,8 +91,8 @@ type MeshNeighbor struct {
 
 // MeshStatus статус mesh мережі
 type MeshStatus struct {
-	Enabled   bool `json:"enabled"`
-	Running   bool `json:"running"`
+	Enabled   bool   `json:"enabled"`
+	Running   bool   `json:"running"`
 	NodeID    uint32 `json:"node_id"`
 	NodeCount int    `json:"node_count"`
 }
@@ -133,14 +133,14 @@ type DeviceMetricsPayload struct {
 
 // Command команда для пристрою
 type Command struct {
-	ID          uuid.UUID  `json:"id"`
-	DeviceID    uuid.UUID  `json:"device_id"`
-	Command     string     `json:"command"`
-	Params      string     `json:"params,omitempty"`
-	Status      string     `json:"status"` // pending, sent, acknowledged, failed
-	CreatedAt   time.Time  `json:"created_at"`
-	SentAt      *time.Time `json:"sent_at,omitempty"`
-	AckedAt     *time.Time `json:"acked_at,omitempty"`
+	ID        uuid.UUID  `json:"id"`
+	DeviceID  uuid.UUID  `json:"device_id"`
+	Command   string     `json:"command"`
+	Params    string     `json:"params,omitempty"`
+	Status    string     `json:"status"` // pending, sent, acknowledged, failed
+	CreatedAt time.Time  `json:"created_at"`
+	SentAt    *time.Time `json:"sent_at,omitempty"`
+	AckedAt   *time.Time `json:"acked_at,omitempty"`
 }
 
 // DeviceCommand структура для відправки на ESP
@@ -160,14 +160,14 @@ type CreateDeviceRequest struct {
 
 // BatchMetricsPayload payload від gateway з метриками всіх нод
 type BatchMetricsPayload struct {
-	GatewayID string            `json:"gateway_id"`
-	Timestamp time.Time         `json:"timestamp"`
+	GatewayID string             `json:"gateway_id"`
+	Timestamp time.Time          `json:"timestamp"`
 	Nodes     []NodeMetricsBatch `json:"nodes"`
 }
 
 // NodeMetricsBatch метрики однієї ноди в batch
 type NodeMetricsBatch struct {
-	NodeID      uint32  `json:"node_id"`       // painlessMesh node ID
+	NodeID      uint32  `json:"node_id"` // painlessMesh node ID
 	NodeName    string  `json:"node_name"`
 	ChipID      string  `json:"chip_id"`
 	MAC         string  `json:"mac"`
@@ -182,10 +182,10 @@ type NodeMetricsBatch struct {
 
 // GatewayTopology структура для відображення топології
 type GatewayTopology struct {
-	Gateway    Device   `json:"gateway"`
-	MeshNodes  []Device `json:"mesh_nodes"`
-	TotalNodes int      `json:"total_nodes"`
-	OnlineNodes int     `json:"online_nodes"`
+	Gateway     Device   `json:"gateway"`
+	MeshNodes   []Device `json:"mesh_nodes"`
+	TotalNodes  int      `json:"total_nodes"`
+	OnlineNodes int      `json:"online_nodes"`
 }
 
 // UpdateAlertSettingsRequest запит на оновлення налаштувань алертів
@@ -218,4 +218,3 @@ type DashboardStats struct {
 	AvgTemp       float64 `json:"avg_temperature"`
 	AvgHumidity   float64 `json:"avg_humidity"`
 }
-

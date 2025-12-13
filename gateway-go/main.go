@@ -3,11 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -20,9 +18,6 @@ import (
 
 	"go.bug.st/serial"
 )
-
-//go:embed templates/*
-var templatesFS embed.FS
 
 // Config holds gateway configuration
 type Config struct {
@@ -64,7 +59,6 @@ type Gateway struct {
 	nodesMu    sync.RWMutex
 	running    bool
 	stats      Stats
-	templates  *template.Template
 }
 
 // Stats tracks gateway statistics
@@ -175,17 +169,11 @@ func main() {
 
 // NewGateway creates a new gateway instance
 func NewGateway(config Config) *Gateway {
-	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
-	if err != nil {
-		log.Printf("Warning: Failed to parse templates: %v", err)
-	}
-
 	return &Gateway{
 		config:     config,
 		nodes:      make(map[uint32]*MeshNode),
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		stats:      Stats{StartTime: time.Now()},
-		templates:  tmpl,
 	}
 }
 
@@ -593,16 +581,7 @@ func (g *Gateway) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	// Inline template if embedded templates failed
-	if g.templates == nil {
-		g.serveInlineHTML(w, data)
-		return
-	}
-
-	if err := g.templates.ExecuteTemplate(w, "index.html", data); err != nil {
-		g.serveInlineHTML(w, data)
-	}
+	g.serveInlineHTML(w, data)
 }
 
 func (g *Gateway) serveInlineHTML(w http.ResponseWriter, data map[string]interface{}) {
@@ -785,8 +764,8 @@ func (g *Gateway) handleAPICommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		NodeID  uint32 `json:"node_id"`
-		Command string `json:"command"`
+		NodeID  uint32      `json:"node_id"`
+		Command string      `json:"command"`
 		Value   interface{} `json:"value,omitempty"`
 	}
 

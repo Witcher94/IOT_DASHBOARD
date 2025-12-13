@@ -123,4 +123,3 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 
 	return nil
 }
-

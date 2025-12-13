@@ -305,4 +305,3 @@ func (db *DB) MarkOfflineDevices(ctx context.Context, timeout time.Duration) err
 	_, err := db.Pool.Exec(ctx, query, time.Now().Add(-timeout))
 	return err
 }
-
