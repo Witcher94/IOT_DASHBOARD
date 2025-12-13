@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Cpu,
@@ -10,6 +11,8 @@ import {
   Wifi,
   Moon,
   Sun,
+  Menu,
+  X,
 } from 'lucide-react';
 import { useAuthStore } from '../contexts/authStore';
 import { useSettingsStore, useTranslation } from '../contexts/settingsStore';
@@ -19,6 +22,29 @@ export default function Layout() {
   const { theme, toggleTheme } = useSettingsStore();
   const t = useTranslation();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile and handle resize
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setSidebarOpen(false);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Close sidebar when clicking nav link on mobile
+  const handleNavClick = () => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -36,23 +62,56 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex relative">
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-dark-800/90 backdrop-blur-sm border border-dark-700 text-white hover:bg-dark-700 transition-colors"
+      >
+        <Menu className="w-6 h-6" />
+      </button>
+
+      {/* Overlay */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <motion.aside
-        initial={{ x: -100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        className="w-72 bg-dark-900/80 backdrop-blur-xl border-r border-dark-700/50 flex flex-col"
+        initial={false}
+        animate={{
+          x: isMobile ? (sidebarOpen ? 0 : -288) : 0,
+        }}
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        className="fixed lg:static inset-y-0 left-0 z-40 w-72 bg-dark-900/95 lg:bg-dark-900/80 backdrop-blur-xl border-r border-dark-700/50 flex flex-col shadow-xl lg:shadow-none"
       >
         {/* Logo */}
         <div className="p-6 border-b border-dark-700/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-400 flex items-center justify-center">
-              <Wifi className="w-5 h-5 text-dark-950" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-400 flex items-center justify-center">
+                <Wifi className="w-5 h-5 text-dark-950" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold gradient-text">IoT Dashboard</h1>
+                <p className="text-xs text-dark-400">Mesh Network Monitor</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold gradient-text">IoT Dashboard</h1>
-              <p className="text-xs text-dark-400">Mesh Network Monitor</p>
-            </div>
+            {/* Close button (mobile only) */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-2 rounded-lg hover:bg-dark-800 transition-colors"
+            >
+              <X className="w-5 h-5 text-dark-300" />
+            </button>
           </div>
         </div>
 
@@ -63,6 +122,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              onClick={handleNavClick}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                   isActive
@@ -117,7 +177,7 @@ export default function Layout() {
       </motion.aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto lg:ml-0 pt-16 lg:pt-0">
         <Outlet />
       </main>
     </div>
