@@ -688,7 +688,9 @@ func (g *Gateway) handleIndex(w http.ResponseWriter, r *http.Request) {
 	})
 
 	g.stats.mu.Lock()
-	stats := g.stats
+	messagesReceived := g.stats.MessagesReceived
+	batchesSent := g.stats.BatchesSent
+	startTime := g.stats.StartTime
 	g.stats.mu.Unlock()
 
 	onlineCount := 0
@@ -698,11 +700,14 @@ func (g *Gateway) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	uptime := formatDuration(time.Since(startTime))
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	g.renderHTML(w, nodes, stats, onlineCount)
+	g.renderHTML(w, nodes, onlineCount, messagesReceived, batchesSent, uptime)
 }
 
-func (g *Gateway) renderHTML(w http.ResponseWriter, nodes []*MeshNode, stats Stats, onlineCount int) {
+func (g *Gateway) renderHTML(w http.ResponseWriter, nodes []*MeshNode, onlineCount int, messages, batches int64, uptime string) {
+	totalNodes := len(nodes)
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
@@ -730,7 +735,7 @@ func (g *Gateway) renderHTML(w http.ResponseWriter, nodes []*MeshNode, stats Sta
         .node-header{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--border)}
         .node-name{font-weight:600;display:flex;align-items:center;gap:8px}
         .root-badge{font-size:0.625rem;background:var(--warning);color:#000;padding:2px 6px;border-radius:4px;font-weight:700}
-        .status{width:10px;height:10px;border-radius:50%}
+        .status{width:10px;height:10px;border-radius:50%%}
         .status.online{background:var(--success);box-shadow:0 0 8px var(--success)}
         .status.offline{background:var(--danger)}
         .metrics{display:grid;grid-template-columns:repeat(3,1fr);padding:16px;gap:8px}
@@ -767,8 +772,8 @@ func (g *Gateway) renderHTML(w http.ResponseWriter, nodes []*MeshNode, stats Sta
         <div class="stat"><div class="stat-value">%s</div><div class="stat-label">Uptime</div></div>
     </div>
     <div class="nodes">`,
-		VERSION, onlineCount, len(nodes), stats.MessagesReceived, stats.BatchesSent,
-		formatDuration(time.Since(stats.StartTime)))
+		VERSION, onlineCount, totalNodes, messages, batches, uptime)
+	// Debug: log.Printf("Stats: online=%d total=%d msg=%d batch=%d up=%s", onlineCount, totalNodes, messages, batches, uptime)
 
 	if len(nodes) == 0 {
 		html += `<div class="empty"><div class="empty-icon">📡</div><div>Waiting for mesh nodes...</div></div>`
