@@ -13,6 +13,9 @@ export interface Device {
   user_id: string;
   name: string;
   token: string;
+  device_type?: string; // simple_device, gateway, mesh_node
+  gateway_id?: string; // For mesh nodes
+  mesh_node_id?: number; // painlessMesh node ID
   chip_id?: string;
   mac?: string;
   platform?: string;
@@ -75,6 +78,14 @@ export interface DashboardStats {
 
 export interface CreateDeviceRequest {
   name: string;
+  device_type?: string; // simple_device, gateway
+}
+
+export interface GatewayTopology {
+  gateway: Device;
+  mesh_nodes: Device[];
+  total_nodes: number;
+  online_nodes: number;
 }
 
 export interface CreateCommandRequest {

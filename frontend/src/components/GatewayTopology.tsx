@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { gatewayApi } from '../services/api';
-import type { GatewayTopology } from '../types';
+import type { GatewayTopology, Device } from '../types';
 import { Cpu, Wifi, Activity, RefreshCw, Power } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
@@ -130,7 +130,7 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
         {/* Mesh Nodes */}
         {topology.mesh_nodes.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {topology.mesh_nodes.map((node, index) => (
+            {topology.mesh_nodes.map((node: Device, index: number) => (
               <motion.div
                 key={node.id}
                 initial={{ opacity: 0, y: 20 }}

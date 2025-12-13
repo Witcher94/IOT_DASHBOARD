@@ -8,6 +8,7 @@ import type {
   DashboardStats,
   CreateDeviceRequest,
   CreateCommandRequest,
+  GatewayTopology,
 } from '../types';
 
 // В production API на тому ж домені через LB path routing
@@ -158,6 +159,19 @@ export const adminApi = {
   getUserDevices: async (userId: string): Promise<Device[]> => {
     const { data } = await api.get(`/admin/users/${userId}/devices`);
     return data || [];
+  },
+};
+
+// Gateway
+export const gatewayApi = {
+  getTopology: async (gatewayId: string): Promise<GatewayTopology> => {
+    const { data } = await api.get(`/gateways/${gatewayId}/topology`);
+    return data;
+  },
+  
+  sendCommandToNode: async (gatewayId: string, nodeId: string, command: CreateCommandRequest): Promise<Command> => {
+    const { data } = await api.post(`/gateways/${gatewayId}/nodes/${nodeId}/commands`, command);
+    return data;
   },
 };
 
