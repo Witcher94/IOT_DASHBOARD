@@ -172,8 +172,14 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
 
         {/* Mesh Nodes */}
         {topology.mesh_nodes.length > 0 ? (
-          <div className="flex justify-center">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="flex flex-col items-center">
+            <div className={`grid gap-4 ${
+              topology.mesh_nodes.length === 1 
+                ? 'grid-cols-1' 
+                : topology.mesh_nodes.length === 2 
+                  ? 'grid-cols-1 sm:grid-cols-2' 
+                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+            }`}>
               {topology.mesh_nodes.map((node: Device, index: number) => (
                 <motion.div
                   key={node.id}
