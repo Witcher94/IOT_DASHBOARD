@@ -18,7 +18,7 @@ export default function Devices() {
   const t = useTranslation();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newDeviceName, setNewDeviceName] = useState('');
-  const [newDeviceType, setNewDeviceType] = useState<string>('simple_device');
+  const [newDeviceType, setNewDeviceType] = useState<string>('gateway');
   const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState(false);
   const [search, setSearch] = useState('');
@@ -97,7 +97,7 @@ export default function Devices() {
   const handleCloseModal = () => {
     setShowAddModal(false);
     setNewDeviceName('');
-    setNewDeviceType('simple_device');
+    setNewDeviceType('gateway');
     setNewDeviceToken(null);
     setCopiedToken(false);
   };
@@ -111,7 +111,7 @@ export default function Devices() {
     }
   };
 
-  // Filter: show only gateway and simple_device (hide mesh_node - they're shown in topology)
+  // Filter: show gateway, simple_device, and skud (hide mesh_node - they're shown in topology)
   // Hide devices that have gateway_id or mesh_node_id (they're mesh nodes shown in topology)
   const filteredDevices = devices?.filter((device) => {
     const matchesSearch = device.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -123,8 +123,11 @@ export default function Devices() {
       return false;
     }
     
-    // Show gateway and simple_device (or null device_type which defaults to simple_device)
-    const isVisible = !device.device_type || device.device_type === 'simple_device' || device.device_type === 'gateway';
+    // Show gateway, simple_device, and skud (or null device_type which defaults to simple_device)
+    const isVisible = !device.device_type || 
+      device.device_type === 'simple_device' || 
+      device.device_type === 'gateway' ||
+      device.device_type === 'skud';
     return matchesSearch && isVisible;
   });
 
@@ -291,15 +294,9 @@ export default function Devices() {
                       onChange={(e) => setNewDeviceType(e.target.value)}
                       className="input-field"
                     >
-                      <option value="simple_device">IoT Sensor</option>
-                      <option value="gateway">Gateway</option>
+                      <option value="gateway">Gateway (ESP/Raspberry Pi)</option>
                       <option value="skud">SKUD (Access Control)</option>
                     </select>
-                    {newDeviceType === 'skud' && (
-                      <p className="text-xs text-amber-400 mt-2">
-                        ⚠️ SKUD devices use challenge-response authentication
-                      </p>
-                    )}
                   </div>
                   <div className="flex gap-3">
                     <button onClick={handleCloseModal} className="btn-secondary flex-1">

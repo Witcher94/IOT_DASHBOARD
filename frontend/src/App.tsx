@@ -9,6 +9,7 @@ import DeviceDetail from './pages/DeviceDetail';
 import Admin from './pages/Admin';
 import Settings from './pages/Settings';
 import SKUD from './pages/SKUD';
+import CardDetail from './pages/CardDetail';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="devices" element={<Devices />} />
         <Route path="devices/:id" element={<DeviceDetail />} />
         <Route path="skud" element={<SKUD />} />
+        <Route path="skud/cards/:id" element={<CardDetail />} />
         <Route path="admin" element={
           <AdminRoute>
             <Admin />

@@ -71,6 +71,11 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 		return
 	}
 
+	// Update device online status
+	if err := h.db.UpdateDeviceOnline(c.Request.Context(), device.ID, true); err != nil {
+		log.Printf("[SKUD] Failed to update device online status: %v", err)
+	}
+
 	// Generate and store challenge
 	challenge, err := h.db.CreateChallenge(c.Request.Context(), device.ID)
 	if err != nil {

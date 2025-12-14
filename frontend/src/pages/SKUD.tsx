@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -68,6 +68,7 @@ export default function SKUD() {
   const t = useTranslation();
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [activeTab, setActiveTab] = useState<TabType>('cards');
@@ -104,22 +105,14 @@ export default function SKUD() {
     }
   };
 
-  // Auto-select first device if none selected and devices loaded
-  useEffect(() => {
-    if (!selectedDeviceId && skudDevices.length > 0) {
-      handleDeviceChange(skudDevices[0].id);
-    }
-  }, [skudDevices, selectedDeviceId]);
 
   // Load logs with filters
   const loadLogs = useCallback(async () => {
-    if (!selectedDeviceId) return;
-    
     try {
       const filters: Parameters<typeof skudApi.getAccessLogs>[0] = {
         limit: 100,
-        device_id: selectedDeviceId,
       };
+      if (selectedDeviceId) filters.device_id = selectedDeviceId;
       if (logActionFilter) filters.action = logActionFilter;
       if (logAllowedFilter === 'true') filters.allowed = true;
       if (logAllowedFilter === 'false') filters.allowed = false;
@@ -230,11 +223,11 @@ export default function SKUD() {
     };
   }, [activeTab, connectWebSocket]);
 
-  // Queries - filter cards by selected device
+  // Queries - get ALL cards (show linked devices for each)
   const { data: cards, isLoading: cardsLoading } = useQuery({
-    queryKey: ['skud-cards', statusFilter, selectedDeviceId],
-    queryFn: () => skudApi.getCards(statusFilter || undefined, selectedDeviceId || undefined),
-    enabled: activeTab === 'cards' && !!selectedDeviceId,
+    queryKey: ['skud-cards', statusFilter],
+    queryFn: () => skudApi.getCards(statusFilter || undefined),
+    enabled: activeTab === 'cards',
   });
 
   // Mutations
@@ -290,39 +283,10 @@ export default function SKUD() {
         animate={{ opacity: 1, y: 0 }}
         className="mb-8"
       >
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">
-              <span className="gradient-text">SKUD</span>
-            </h1>
-            <p className="text-dark-400">{t.accessControl || 'Access Control System'}</p>
-          </div>
-          
-          {/* Device Selector */}
-          <div className="glass rounded-xl p-4 min-w-[300px]">
-            <div className="flex items-center gap-3 mb-2">
-              <Cpu className="w-5 h-5 text-primary-400" />
-              <span className="text-sm font-medium text-dark-300">{t.selectDevice || 'Select Device'}</span>
-            </div>
-            {skudDevices.length > 0 ? (
-              <select
-                value={selectedDeviceId}
-                onChange={(e) => handleDeviceChange(e.target.value)}
-                className="input-field w-full"
-              >
-                {skudDevices.map((device: Device) => (
-                  <option key={device.id} value={device.id}>
-                    {device.name} {device.is_online ? '🟢' : '🔴'}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-sm text-dark-400">
-                {t.noSkudDevices || 'No SKUD devices found. Create one in Devices page.'}
-              </p>
-            )}
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold mb-2">
+          <span className="gradient-text">SKUD</span>
+        </h1>
+        <p className="text-dark-400">{t.accessControl || 'Access Control System'}</p>
       </motion.div>
 
       {/* Tabs */}
@@ -391,8 +355,11 @@ export default function SKUD() {
                   className="glass rounded-xl p-5 border border-dark-700/50 hover:border-primary-500/30 transition-all"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <p className="font-mono text-lg font-semibold text-white mb-1">
+                    <div 
+                      onClick={() => navigate(`/skud/cards/${card.id}`)}
+                      className="cursor-pointer hover:opacity-80 transition-opacity"
+                    >
+                      <p className="font-mono text-lg font-semibold text-white mb-1 hover:text-primary-400 transition-colors">
                         {card.card_uid}
                       </p>
                       <StatusBadge status={card.status} />
@@ -490,6 +457,23 @@ export default function SKUD() {
           {/* Filters */}
           <div className="glass rounded-xl p-4 mb-6">
             <div className="flex flex-wrap items-center gap-4">
+              {/* Device filter */}
+              <div className="flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-dark-400" />
+                <select
+                  value={selectedDeviceId}
+                  onChange={(e) => handleDeviceChange(e.target.value)}
+                  className="input-field w-auto py-2 text-sm"
+                >
+                  <option value="">Всі пристрої</option>
+                  {skudDevices.map((device: Device) => (
+                    <option key={device.id} value={device.id}>
+                      {device.name} {device.is_online ? '🟢' : '🔴'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Action filter */}
               <div className="flex items-center gap-2">
                 <Filter className="w-4 h-4 text-dark-400" />
