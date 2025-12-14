@@ -469,54 +469,59 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	allowed := card.Status == models.CardStatusActive && linkedToDevice
 	tokenUpdated := false
 
-	// DESFire cards REQUIRE token authentication
-	isDESFire := req.CardType == "MIFARE_DESFIRE" || req.CardType == "DESFIRE" || 
-		card.CardType == "MIFARE_DESFIRE" || card.CardType == "DESFIRE"
-	
-	if isDESFire && allowed {
-		// Token is REQUIRED for DESFire cards
-		if req.CardToken == "" {
-			log.Printf("[SKUD] DESFire card requires token: device=%s card=%s", deviceName, req.CardUID)
-			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "token_required", false)
-			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
-			return
-		}
+	// Token verification ONLY for SKUD devices
+	// Gateway and other devices use simple UID-based verification
+	if device.DeviceType == models.DeviceTypeSKUD && allowed {
+		// Check if this is a DESFire card
+		isDESFire := req.CardType == "MIFARE_DESFIRE" || req.CardType == "DESFIRE" ||
+			card.CardType == "MIFARE_DESFIRE" || card.CardType == "DESFIRE"
 
-		tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
-		if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
-			log.Printf("[SKUD] DESFire token verification failed: device=%s card=%s", deviceName, req.CardUID)
-			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
-			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
-			return
-		}
-
-		// If old token was used successfully, promote it (rotate completed)
-		if !isCurrent {
-			if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
-				log.Printf("[SKUD] Failed to promote token: %v", err)
-			} else {
-				log.Printf("[SKUD] Old token promoted to current for card %s", req.CardUID)
-				tokenUpdated = true
+		if isDESFire {
+			// DESFire cards REQUIRE token authentication on SKUD devices
+			if req.CardToken == "" {
+				log.Printf("[SKUD] DESFire card requires token: device=%s card=%s", deviceName, req.CardUID)
+				h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "token_required", false)
+				c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
+				return
 			}
-		}
-	} else if req.CardToken != "" && allowed {
-		// Optional token verification for non-DESFire cards
-		tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
-		if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
-			log.Printf("[SKUD] Card token verification failed: device=%s card=%s", deviceName, req.CardUID)
-			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
-			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
-			return
-		}
 
-		if !isCurrent {
-			if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
-				log.Printf("[SKUD] Failed to promote token: %v", err)
-			} else {
-				tokenUpdated = true
+			tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
+			if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
+				log.Printf("[SKUD] DESFire token verification failed: device=%s card=%s", deviceName, req.CardUID)
+				h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
+				c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
+				return
+			}
+
+			// If old token was used successfully, promote it (rotate completed)
+			if !isCurrent {
+				if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
+					log.Printf("[SKUD] Failed to promote token: %v", err)
+				} else {
+					log.Printf("[SKUD] Old token promoted to current for card %s", req.CardUID)
+					tokenUpdated = true
+				}
+			}
+		} else if req.CardToken != "" {
+			// Optional token verification for non-DESFire cards on SKUD devices
+			tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
+			if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
+				log.Printf("[SKUD] Card token verification failed: device=%s card=%s", deviceName, req.CardUID)
+				h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
+				c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
+				return
+			}
+
+			if !isCurrent {
+				if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
+					log.Printf("[SKUD] Failed to promote token: %v", err)
+				} else {
+					tokenUpdated = true
+				}
 			}
 		}
 	}
+	// For non-SKUD devices (gateway, simple) - no token verification needed
 
 	log.Printf("[SKUD] Verify: device=%s card=%s status=%s linked=%v allowed=%v tokenUpdated=%v",
 		deviceName, req.CardUID, card.Status, linkedToDevice, allowed, tokenUpdated)
