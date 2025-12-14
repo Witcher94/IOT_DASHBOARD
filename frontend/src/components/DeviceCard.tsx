@@ -8,6 +8,7 @@ import {
   Clock,
   Trash2,
   ExternalLink,
+  HardDrive,
 } from 'lucide-react';
 import { useDateFormat } from '../utils/dateFormat';
 import { useTranslation } from '../contexts/settingsStore';
@@ -42,6 +43,13 @@ export default function DeviceCard({
     hum != null ? `${hum.toFixed(0)}%` : '--%';
   const formatRssi = (r?: number | null) => 
     r != null ? `${r}dBm` : 'WiFi';
+  
+  // For gateway: humidity = memory %, free_heap/10 = CPU %
+  const isGateway = device.device_type === 'gateway';
+  const formatCpuUsage = (heap?: number | null) => 
+    heap != null ? `${(heap / 10).toFixed(0)}%` : '--%';
+  const formatMemUsage = (mem?: number | null) => 
+    mem != null ? `${mem.toFixed(0)}%` : '--%';
   
   return (
     <motion.div
@@ -91,18 +99,39 @@ export default function DeviceCard({
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="text-center p-2 rounded-lg bg-dark-800/50">
-            <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
-            <p className="text-sm font-medium">{formatTemp(temperature)}</p>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-dark-800/50">
-            <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
-            <p className="text-sm font-medium">{formatHum(humidity)}</p>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-dark-800/50">
-            <Wifi className="w-4 h-4 text-purple-400 mx-auto mb-1" />
-            <p className="text-sm font-medium">{formatRssi(rssi)}</p>
-          </div>
+          {isGateway ? (
+            <>
+              {/* Gateway: CPU Temp, Memory %, CPU % */}
+              <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
+                <p className="text-sm font-medium">{formatTemp(temperature)}</p>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                <HardDrive className="w-4 h-4 text-blue-400 mx-auto mb-1" />
+                <p className="text-sm font-medium">{formatMemUsage(humidity)}</p>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                <Cpu className="w-4 h-4 text-green-400 mx-auto mb-1" />
+                <p className="text-sm font-medium">{formatCpuUsage(rssi)}</p>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Regular device: Temp, Humidity, WiFi */}
+              <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
+                <p className="text-sm font-medium">{formatTemp(temperature)}</p>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
+                <p className="text-sm font-medium">{formatHum(humidity)}</p>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                <Wifi className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+                <p className="text-sm font-medium">{formatRssi(rssi)}</p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}

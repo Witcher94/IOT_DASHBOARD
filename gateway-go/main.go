@@ -673,15 +673,23 @@ func (g *Gateway) collectGatewayMetrics() *GatewayMetrics {
 }
 
 func getCPUUsage() float64 {
-	cmd := exec.Command("sh", "-c", "top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\([0-9.]*\\)%%* id.*/\\1/' | awk '{print 100 - $1}'")
-	output, err := cmd.Output()
-	if err != nil {
+	// Read /proc/stat twice with 1 second delay to calculate actual CPU usage
+	idle1, total1 := readCPUStat()
+	if total1 == 0 {
 		return -1
 	}
-	usage, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
-	if err != nil {
+	time.Sleep(500 * time.Millisecond)
+	idle2, total2 := readCPUStat()
+	if total2 == 0 {
 		return -1
 	}
+
+	idleDelta := float64(idle2 - idle1)
+	totalDelta := float64(total2 - total1)
+	if totalDelta == 0 {
+		return 0
+	}
+	usage := (1.0 - idleDelta/totalDelta) * 100.0
 	return usage
 }
 
@@ -724,6 +732,36 @@ func getUptime() int64 {
 		return -1
 	}
 	return int64(uptime)
+}
+
+func readCPUStat() (idle, total uint64) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return 0, 0
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "cpu ") {
+			fields := strings.Fields(line)
+			if len(fields) < 5 {
+				return 0, 0
+			}
+			// cpu user nice system idle iowait irq softirq steal guest guest_nice
+			var values []uint64
+			for i := 1; i < len(fields); i++ {
+				val, _ := strconv.ParseUint(fields[i], 10, 64)
+				values = append(values, val)
+			}
+			for _, v := range values {
+				total += v
+			}
+			if len(values) >= 4 {
+				idle = values[3] // idle is 4th value (index 3)
+			}
+			return idle, total
+		}
+	}
+	return 0, 0
 }
 
 func (g *Gateway) SendCommand(nodeID uint32, command string, value interface{}) error {
