@@ -99,6 +99,19 @@ void sendHeartbeat() {
         mesh.getNodeId(), nodeCount, ESP.getFreeHeap(), millis(), lastTemp, lastHum);
 }
 
+void handleCommand(const char* cmd, JsonVariant value) {
+    if (strcmp(cmd, "reboot") == 0) {
+        Serial.println("{\"type\":\"ack\",\"cmd\":\"reboot\",\"status\":\"rebooting\"}");
+        delay(100);
+        ESP.restart();
+    } else if (strcmp(cmd, "status") == 0) {
+        sendHeartbeat();
+    } else if (strcmp(cmd, "toggle_dht") == 0) {
+        // Toggle DHT reading (optional)
+        Serial.println("{\"type\":\"ack\",\"cmd\":\"toggle_dht\"}");
+    }
+}
+
 void processSerial() {
     if (!Serial.available()) return;
     String cmd = Serial.readStringUntil('\n');
@@ -112,18 +125,34 @@ void processSerial() {
     if (!type) return;
     
     if (strcmp(type, "broadcast") == 0) {
+        JsonObject data = doc["data"];
+        const char* cmdName = data["cmd"];
+        
+        // Execute command locally first (bridge is also a node)
+        if (cmdName) {
+            handleCommand(cmdName, data["value"]);
+        }
+        
+        // Then broadcast to mesh
         String payload;
-        serializeJson(doc["data"], payload);
+        serializeJson(data, payload);
         mesh.sendBroadcast(payload);
-        Serial.println("{\"type\":\"ack\",\"cmd\":\"broadcast\"}");
+        Serial.printf("{\"type\":\"ack\",\"cmd\":\"broadcast\",\"target\":\"all\",\"payload\":\"%s\"}\n", cmdName);
     } else if (strcmp(type, "send") == 0) {
         uint32_t target = doc["target"];
+        JsonObject data = doc["data"];
         String payload;
-        serializeJson(doc["data"], payload);
+        serializeJson(data, payload);
         mesh.sendSingle(target, payload);
         Serial.println("{\"type\":\"ack\",\"cmd\":\"send\"}");
     } else if (strcmp(type, "status") == 0) {
         sendHeartbeat();
+    } else if (strcmp(type, "cmd") == 0) {
+        // Direct command to bridge
+        const char* cmdName = doc["cmd"];
+        if (cmdName) {
+            handleCommand(cmdName, doc["value"]);
+        }
     }
 }
 
