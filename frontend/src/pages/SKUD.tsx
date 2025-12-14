@@ -257,6 +257,26 @@ export default function SKUD() {
     onError: () => toast.error(t.error),
   });
 
+  const linkCardMutation = useMutation({
+    mutationFn: ({ cardId, deviceId }: { cardId: string; deviceId: string }) =>
+      skudApi.linkCardToDevice(cardId, deviceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
+      toast.success(t.linkCard);
+    },
+    onError: () => toast.error(t.error),
+  });
+
+  const unlinkCardMutation = useMutation({
+    mutationFn: ({ cardId, deviceId }: { cardId: string; deviceId: string }) =>
+      skudApi.unlinkCardFromDevice(cardId, deviceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
+      toast.success(t.unlinkCard);
+    },
+    onError: () => toast.error(t.error),
+  });
+
   const tabs = [
     { id: 'cards' as const, icon: CreditCard, label: t.cards },
     { id: 'logs' as const, icon: FileText, label: t.accessLogs },
@@ -389,22 +409,38 @@ export default function SKUD() {
                     </button>
                   </div>
 
-                  {/* Linked Devices */}
-                  {card.devices && card.devices.length > 0 && (
-                    <div className="mb-4">
-                      <p className="text-xs text-dark-400 mb-2">{t.linkedDevices}:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {card.devices.map((device) => (
-                          <span
+                  {/* Device Links Manager */}
+                  <div className="mb-4">
+                    <p className="text-xs text-dark-400 mb-2">{t.linkedDevices}:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {skudDevices.map((device: Device) => {
+                        const isLinked = card.devices?.some((d) => d.id === device.id);
+                        return (
+                          <button
                             key={device.id}
-                            className="px-2 py-1 text-xs bg-dark-700/50 rounded-lg text-dark-200"
+                            onClick={() => {
+                              if (isLinked) {
+                                unlinkCardMutation.mutate({ cardId: card.id, deviceId: device.id });
+                              } else {
+                                linkCardMutation.mutate({ cardId: card.id, deviceId: device.id });
+                              }
+                            }}
+                            disabled={linkCardMutation.isPending || unlinkCardMutation.isPending}
+                            className={`px-2 py-1 text-xs rounded-lg transition-all flex items-center gap-1 ${
+                              isLinked
+                                ? 'bg-primary-500/20 text-primary-300 border border-primary-500/30 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/30'
+                                : 'bg-dark-700/50 text-dark-400 border border-transparent hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/30'
+                            }`}
                           >
-                            {device.name || device.device_id}
-                          </span>
-                        ))}
-                      </div>
+                            {isLinked ? '✓' : '+'} {device.name}
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
+                    {skudDevices.length === 0 && (
+                      <p className="text-xs text-dark-500">{t.noSkudDevices}</p>
+                    )}
+                  </div>
 
                   {/* Status Actions */}
                   <div className="flex gap-2">

@@ -182,6 +182,10 @@ func main() {
 			skud.PATCH("/cards/:id/status", skudHandler.UpdateCardStatus)
 			skud.DELETE("/cards/:id", skudHandler.DeleteCard)
 
+			// Card-Device links
+			skud.POST("/cards/:id/devices/:device_id", skudHandler.LinkCardToDevice)
+			skud.DELETE("/cards/:id/devices/:device_id", skudHandler.UnlinkCardFromDevice)
+
 			// Access logs
 			skud.GET("/logs", skudHandler.GetAccessLogs)
 		}

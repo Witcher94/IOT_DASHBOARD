@@ -217,6 +217,88 @@ func (h *SKUDHandler) DeleteCard(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// ==================== Card-Device Links ====================
+
+// LinkCardToDevice links a card to a device
+// POST /skud/cards/:id/devices/:device_id
+func (h *SKUDHandler) LinkCardToDevice(c *gin.Context) {
+	cardID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid card ID"})
+		return
+	}
+
+	deviceID, err := uuid.Parse(c.Param("device_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	// Check if card exists
+	card, err := h.db.GetCardByID(c.Request.Context(), cardID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Card not found", "error_code": "CARD_NOT_FOUND"})
+		return
+	}
+
+	// Check if device exists and is SKUD type
+	device, err := h.db.GetDeviceByID(c.Request.Context(), deviceID)
+	if err != nil || device == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found", "error_code": "DEVICE_NOT_FOUND"})
+		return
+	}
+
+	if device.DeviceType != models.DeviceTypeSKUD {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device is not a SKUD device", "error_code": "NOT_SKUD_DEVICE"})
+		return
+	}
+
+	// Link card to device
+	if err := h.db.LinkCardToDevice(c.Request.Context(), cardID, deviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated card
+	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), cardID)
+	log.Printf("[SKUD] Card %s linked to device %s", card.CardUID, device.Name)
+	c.JSON(http.StatusOK, updatedCard)
+}
+
+// UnlinkCardFromDevice unlinks a card from a device
+// DELETE /skud/cards/:id/devices/:device_id
+func (h *SKUDHandler) UnlinkCardFromDevice(c *gin.Context) {
+	cardID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid card ID"})
+		return
+	}
+
+	deviceID, err := uuid.Parse(c.Param("device_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	// Check if card exists
+	card, err := h.db.GetCardByID(c.Request.Context(), cardID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Card not found", "error_code": "CARD_NOT_FOUND"})
+		return
+	}
+
+	// Unlink card from device
+	if err := h.db.UnlinkCardFromDevice(c.Request.Context(), cardID, deviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated card
+	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), cardID)
+	log.Printf("[SKUD] Card %s unlinked from device %s", card.CardUID, deviceID)
+	c.JSON(http.StatusOK, updatedCard)
+}
+
 // ==================== ESP Device Access Endpoints ====================
 // These endpoints use X-Device-Token (same token as IoT devices)
 // SKUD devices require challenge-response authentication

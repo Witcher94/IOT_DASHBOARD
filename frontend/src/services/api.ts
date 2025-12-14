@@ -242,6 +242,17 @@ export const skudApi = {
     await api.delete(`/skud/cards/${id}`);
   },
 
+  // Card-Device links
+  linkCardToDevice: async (cardId: string, deviceId: string): Promise<Card> => {
+    const { data } = await api.post(`/skud/cards/${cardId}/devices/${deviceId}`);
+    return data;
+  },
+
+  unlinkCardFromDevice: async (cardId: string, deviceId: string): Promise<Card> => {
+    const { data } = await api.delete(`/skud/cards/${cardId}/devices/${deviceId}`);
+    return data;
+  },
+
   // Access Logs
   getAccessLogs: async (filters?: {
     action?: string;
