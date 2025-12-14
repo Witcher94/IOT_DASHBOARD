@@ -388,20 +388,94 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 			return
 		}
 
-		// SUCCESS! Card authenticated
-		log.Printf("[DESFire] Card %s authenticated successfully!", session.CardUID)
+		// Crypto verified - now check card status and device linking
+		log.Printf("[DESFire] Card %s crypto verified, checking status...", session.CardUID)
 
-		// Get card info for response
-		card, _ := h.db.GetCardByUID(c.Request.Context(), session.CardUID)
-		cardName := ""
-		if card != nil {
-			cardName = card.Name
-			if cardName == "" {
-				cardName = card.CardUID
-			}
+		// Get card info
+		card, err := h.db.GetCardByUID(c.Request.Context(), session.CardUID)
+		if err != nil || card == nil {
+			log.Printf("[DESFire] Card %s not found in database", session.CardUID)
+			h.db.CreateAccessLog(c.Request.Context(), &models.AccessLog{
+				DeviceID: device.Name,
+				CardUID:  session.CardUID,
+				CardType: "MIFARE_DESFIRE",
+				Action:   "desfire_auth",
+				Status:   "not_found",
+				Allowed:  false,
+			})
+			c.JSON(http.StatusOK, services.DesfireStepResponse{
+				Status:  "denied",
+				Reason:  "card_not_found",
+				Message: "Card not registered",
+			})
+			return
 		}
 
-		// Log success
+		cardName := card.Name
+		if cardName == "" {
+			cardName = card.CardUID
+		}
+
+		// Check card status
+		if card.Status != models.CardStatusActive {
+			log.Printf("[DESFire] Card %s is not active (status: %s)", session.CardUID, card.Status)
+			h.db.CreateAccessLog(c.Request.Context(), &models.AccessLog{
+				DeviceID: device.Name,
+				CardUID:  session.CardUID,
+				CardType: "MIFARE_DESFIRE",
+				Action:   "desfire_auth",
+				Status:   card.Status,
+				Allowed:  false,
+			})
+			h.hub.BroadcastAccessLog(map[string]interface{}{
+				"type":     "access",
+				"card_uid": session.CardUID,
+				"device":   device.Name,
+				"allowed":  false,
+				"action":   "desfire_auth",
+				"status":   card.Status,
+			})
+			c.JSON(http.StatusOK, services.DesfireStepResponse{
+				Status:   "denied",
+				Reason:   "card_" + card.Status,
+				Message:  "Card is " + card.Status,
+				CardName: cardName,
+			})
+			return
+		}
+
+		// Check if card is linked to this device
+		linkedToDevice, _ := h.db.IsCardLinkedToDevice(c.Request.Context(), card.ID, device.ID)
+		if !linkedToDevice {
+			log.Printf("[DESFire] Card %s not linked to device %s", session.CardUID, device.Name)
+			h.db.CreateAccessLog(c.Request.Context(), &models.AccessLog{
+				DeviceID: device.Name,
+				CardUID:  session.CardUID,
+				CardType: "MIFARE_DESFIRE",
+				Action:   "desfire_auth",
+				Status:   "not_linked",
+				Allowed:  false,
+			})
+			h.hub.BroadcastAccessLog(map[string]interface{}{
+				"type":     "access",
+				"card_uid": session.CardUID,
+				"device":   device.Name,
+				"allowed":  false,
+				"action":   "desfire_auth",
+				"status":   "not_linked",
+			})
+			c.JSON(http.StatusOK, services.DesfireStepResponse{
+				Status:   "denied",
+				Reason:   "not_linked",
+				Message:  "Card not linked to this device",
+				CardName: cardName,
+			})
+			return
+		}
+
+		// SUCCESS! Card authenticated, active, and linked
+		log.Printf("[DESFire] Card %s GRANTED access on device %s", session.CardUID, device.Name)
+
 		h.db.CreateAccessLog(c.Request.Context(), &models.AccessLog{
 			DeviceID: device.Name,
 			CardUID:  session.CardUID,
@@ -411,7 +485,6 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 			Allowed:  true,
 		})
 
-		// Broadcast to websocket
 		h.hub.BroadcastAccessLog(map[string]interface{}{
 			"type":     "access",
 			"card_uid": session.CardUID,
@@ -423,7 +496,7 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 		c.JSON(http.StatusOK, services.DesfireStepResponse{
 			Status:   "granted",
 			CardName: cardName,
-			Message:  "Card authenticated successfully",
+			Message:  "Access granted",
 		})
 		return
 

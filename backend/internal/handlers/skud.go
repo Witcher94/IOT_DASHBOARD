@@ -469,11 +469,22 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	allowed := card.Status == models.CardStatusActive && linkedToDevice
 	tokenUpdated := false
 
-	// Optional: Verify card token if provided (for DESFire cards with token authentication)
-	if req.CardToken != "" && allowed {
+	// DESFire cards REQUIRE token authentication
+	isDESFire := req.CardType == "MIFARE_DESFIRE" || req.CardType == "DESFIRE" || 
+		card.CardType == "MIFARE_DESFIRE" || card.CardType == "DESFIRE"
+	
+	if isDESFire && allowed {
+		// Token is REQUIRED for DESFire cards
+		if req.CardToken == "" {
+			log.Printf("[SKUD] DESFire card requires token: device=%s card=%s", deviceName, req.CardUID)
+			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "token_required", false)
+			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
+			return
+		}
+
 		tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
 		if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
-			log.Printf("[SKUD] Card token verification failed: device=%s card=%s", deviceName, req.CardUID)
+			log.Printf("[SKUD] DESFire token verification failed: device=%s card=%s", deviceName, req.CardUID)
 			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
 			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
 			return
@@ -485,6 +496,23 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 				log.Printf("[SKUD] Failed to promote token: %v", err)
 			} else {
 				log.Printf("[SKUD] Old token promoted to current for card %s", req.CardUID)
+				tokenUpdated = true
+			}
+		}
+	} else if req.CardToken != "" && allowed {
+		// Optional token verification for non-DESFire cards
+		tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
+		if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
+			log.Printf("[SKUD] Card token verification failed: device=%s card=%s", deviceName, req.CardUID)
+			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
+			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
+			return
+		}
+
+		if !isCurrent {
+			if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
+				log.Printf("[SKUD] Failed to promote token: %v", err)
+			} else {
 				tokenUpdated = true
 			}
 		}
