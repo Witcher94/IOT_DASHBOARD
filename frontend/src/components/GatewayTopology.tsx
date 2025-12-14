@@ -338,7 +338,8 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
       <LogsModal
         isOpen={showLogs}
         onClose={() => setShowLogs(false)}
-        gatewayId={gatewayId}
+        gatewayName={topology?.gateway?.name || 'Gateway'}
+        gatewayIp="192.168.0.92"
       />
     </div>
   );
