@@ -97,12 +97,16 @@ func (h *DeviceHandler) GetDevice(c *gin.Context) {
 		return
 	}
 
-	// Check ownership
+	// Check ownership or shared access
 	userID, _ := c.Get("user_id")
 	isAdmin, _ := c.Get("is_admin")
 	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-		return
+		// Check if shared with user
+		hasAccess, _, _ := h.db.HasDeviceAccess(c.Request.Context(), deviceID, userID.(uuid.UUID))
+		if !hasAccess {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, device)
@@ -180,12 +184,15 @@ func (h *DeviceHandler) GetMetrics(c *gin.Context) {
 		return
 	}
 
-	// Check ownership
+	// Check ownership or shared access
 	userID, _ := c.Get("user_id")
 	isAdmin, _ := c.Get("is_admin")
 	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-		return
+		hasAccess, _, _ := h.db.HasDeviceAccess(c.Request.Context(), deviceID, userID.(uuid.UUID))
+		if !hasAccess {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
 	}
 
 	limit := 100

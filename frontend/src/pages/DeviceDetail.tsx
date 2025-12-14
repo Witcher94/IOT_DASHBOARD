@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '../contexts/authStore';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -62,6 +63,7 @@ export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
   const [selectedPeriod, setSelectedPeriod] = useState('1h');
   const [copiedToken, setCopiedToken] = useState(false);
   const [visibleToken, setVisibleToken] = useState<string | null>(null);
@@ -85,6 +87,10 @@ export default function DeviceDetail() {
     queryFn: () => commandsApi.getByDeviceId(id!),
     enabled: !!id,
   });
+
+  // Check if current user is the owner
+  const isOwner = device?.user_id === user?.id;
+  const isSharedView = !isOwner && !!device;
 
   const sendCommandMutation = useMutation({
     mutationFn: (command: string) => commandsApi.create(id!, { command }),
@@ -294,23 +300,32 @@ export default function DeviceDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowShareModal(true)}
-            className="p-2 md:p-2.5 rounded-lg hover:bg-primary-500/20 text-primary-400 transition-colors shrink-0"
-            title="Share device"
-          >
-            <Share2 className="w-4 h-4 md:w-5 md:h-5" />
-          </button>
-          <button
-            onClick={() => {
-              if (confirm(t.confirm + '?')) {
-                deleteMutation.mutate();
-              }
-            }}
-            className="p-2 md:p-2.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
-          >
-            <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
-          </button>
+          {isSharedView && (
+            <span className="px-2 py-1 rounded-full text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30">
+              👁️ Shared
+            </span>
+          )}
+          {isOwner && (
+            <>
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="p-2 md:p-2.5 rounded-lg hover:bg-primary-500/20 text-primary-400 transition-colors shrink-0"
+                title="Share device"
+              >
+                <Share2 className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm(t.confirm + '?')) {
+                    deleteMutation.mutate();
+                  }
+                }}
+                className="p-2 md:p-2.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
+              >
+                <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+            </>
+          )}
         </div>
       </motion.div>
 
@@ -440,7 +455,8 @@ export default function DeviceDetail() {
           )}
         </motion.div>
 
-        {/* Quick Commands */}
+        {/* Quick Commands - only for owner */}
+        {isOwner && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -493,8 +509,10 @@ export default function DeviceDetail() {
             </div>
           </div>
         </motion.div>
+        )}
 
-        {/* Alert Settings */}
+        {/* Alert Settings - only for owner */}
+        {isOwner && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -580,8 +598,10 @@ export default function DeviceDetail() {
             </div>
           )}
         </motion.div>
+        )}
 
-        {/* Device Token */}
+        {/* Device Token - only for owner */}
+        {isOwner && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -645,6 +665,7 @@ export default function DeviceDetail() {
             </div>
           )}
         </motion.div>
+        )}
       </div>
 
       {/* Share Modal */}

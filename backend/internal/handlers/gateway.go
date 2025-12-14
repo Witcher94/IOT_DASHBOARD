@@ -156,12 +156,15 @@ func (h *GatewayHandler) GetGatewayTopology(c *gin.Context) {
 		return
 	}
 
-	// Check ownership
+	// Check ownership or shared access
 	userID, _ := c.Get("user_id")
 	isAdmin, _ := c.Get("is_admin")
 	if gateway.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-		return
+		hasAccess, _, _ := h.db.HasDeviceAccess(c.Request.Context(), gatewayID, userID.(uuid.UUID))
+		if !hasAccess {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
 	}
 
 	// Verify it's a gateway
