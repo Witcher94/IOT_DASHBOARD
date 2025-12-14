@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -8,6 +9,10 @@ import {
   Clock,
   XCircle,
   Trash2,
+  Pencil,
+  Check,
+  X,
+  Copy,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { skudApi, devicesApi } from '../services/api';
@@ -92,6 +97,37 @@ export default function CardDetail() {
     onError: () => toast.error(t.error),
   });
 
+  const updateCardMutation = useMutation({
+    mutationFn: (name: string) => skudApi.updateCard(id!, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['card', id] });
+      queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
+      toast.success(t.cardUpdated || 'Картку оновлено');
+      setIsEditing(false);
+    },
+    onError: () => toast.error(t.error),
+  });
+
+  // Editing state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingName, setEditingName] = useState('');
+
+  const startEditing = () => {
+    setEditingName(card?.name || '');
+    setIsEditing(true);
+  };
+
+  const saveCardName = () => {
+    updateCardMutation.mutate(editingName);
+  };
+
+  const copyUid = () => {
+    if (card) {
+      navigator.clipboard.writeText(card.card_uid);
+      toast.success('UID скопійовано');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -124,15 +160,75 @@ export default function CardDetail() {
           {t.cards || 'Cards'}
         </button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-start gap-4">
           <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/20 to-accent-400/20">
             <CreditCard className="w-8 h-8 text-primary-400" />
           </div>
-          <div>
-            <h1 className="text-3xl font-bold font-mono">{card.card_uid}</h1>
-            <p className="text-dark-400">
-              {t.cardUid || 'Card UID'} • {formatDate(card.created_at)}
-            </p>
+          <div className="flex-1">
+            {/* Editable Name */}
+            {isEditing ? (
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  placeholder="Ім'я картки..."
+                  className="input-field text-2xl font-bold py-1 flex-1"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveCardName();
+                    if (e.key === 'Escape') setIsEditing(false);
+                  }}
+                />
+                <button
+                  onClick={saveCardName}
+                  disabled={updateCardMutation.isPending}
+                  className="p-2 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                >
+                  <Check className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="p-2 rounded-lg bg-dark-700 text-dark-300 hover:bg-dark-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-1 group">
+                <h1 className="text-2xl font-bold">
+                  {card.name || <span className="text-dark-400 italic">Без імені</span>}
+                </h1>
+                <button
+                  onClick={startEditing}
+                  className="p-1.5 rounded-lg text-dark-500 hover:text-primary-400 hover:bg-dark-700 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            
+            {/* UID with copy button */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="font-mono text-sm text-dark-400">UID: {card.card_uid}</span>
+              <button
+                onClick={copyUid}
+                className="p-1 rounded text-dark-500 hover:text-primary-400 transition-colors"
+                title="Копіювати UID"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Card type and creation date */}
+            <div className="flex items-center gap-3 text-sm text-dark-400">
+              {card.card_type && (
+                <span className="px-2 py-0.5 rounded-full bg-dark-700/50 text-dark-300 border border-dark-600">
+                  {card.card_type.replace(/_/g, ' ')}
+                </span>
+              )}
+              <span>{formatDate(card.created_at)}</span>
+            </div>
           </div>
         </div>
       </motion.div>

@@ -493,16 +493,17 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 	// Check if card exists
 	card, err := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
 	if err != nil {
-		// Create new card as pending
+		// Create new card as pending with card type
 		card = &models.Card{
-			CardUID: req.CardUID,
-			Status:  models.CardStatusPending,
+			CardUID:  req.CardUID,
+			CardType: req.CardType,
+			Status:   models.CardStatusPending,
 		}
 		if err := h.db.CreateCard(c.Request.Context(), card); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		log.Printf("[SKUD] New card created as pending: %s", req.CardUID)
+		log.Printf("[SKUD] New card created as pending: %s (type: %s)", req.CardUID, req.CardType)
 		
 		// Broadcast new card to WebSocket clients
 		createdCard, _ := h.db.GetCardByUID(c.Request.Context(), req.CardUID)

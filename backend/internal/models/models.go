@@ -261,8 +261,9 @@ const (
 type Card struct {
 	ID        uuid.UUID     `json:"id"`
 	CardUID   string        `json:"card_uid"`
-	Name      string        `json:"name"` // Custom display name for the card
-	Status    string        `json:"status"` // pending, active, disabled
+	CardType  string        `json:"card_type"` // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
+	Name      string        `json:"name"`      // Custom display name for the card
+	Status    string        `json:"status"`    // pending, active, disabled
 	Devices   []DeviceBrief `json:"devices,omitempty"`
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`

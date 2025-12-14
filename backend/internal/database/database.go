@@ -174,6 +174,8 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_access_challenges_expires ON access_challenges(expires_at)`,
 		// Card name field for display
 		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS name VARCHAR(255) DEFAULT ''`,
+		// Card type field (MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.)
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS card_type VARCHAR(64) DEFAULT ''`,
 	}
 
 	for _, migration := range migrations {

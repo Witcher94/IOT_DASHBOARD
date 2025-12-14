@@ -420,14 +420,21 @@ export default function SKUD() {
                           </button>
                         </div>
                       )}
-                      {/* Card UID (always visible) - clickable to go to detail */}
+                      {/* Card UID and Type */}
                       <Link 
                         to={`/skud/cards/${card.id}`}
                         className="font-mono text-xs text-dark-400 mb-2 truncate block hover:text-primary-400 transition-colors"
                       >
                         UID: {card.card_uid}
                       </Link>
-                      <StatusBadge status={card.status} />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <StatusBadge status={card.status} />
+                        {card.card_type && (
+                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-dark-700/50 text-dark-300 border border-dark-600">
+                            {card.card_type.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => {
