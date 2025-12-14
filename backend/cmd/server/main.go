@@ -69,6 +69,7 @@ func main() {
 	adminHandler := handlers.NewAdminHandler(db)
 	wsHandler := handlers.NewWebSocketHandler(hub)
 	gatewayHandler := handlers.NewGatewayHandler(db, hub)
+	skudHandler := handlers.NewSKUDHandler(db, hub)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -170,6 +171,31 @@ func main() {
 			gateways.GET("/:id/topology", gatewayHandler.GetGatewayTopology)
 			gateways.POST("/:id/nodes/:nodeId/commands", gatewayHandler.SendCommandToMeshNode)
 		}
+
+		// SKUD (Access Control) routes - protected (requires auth)
+		skud := protected.Group("/skud")
+		{
+			// Access devices management
+			skud.GET("/devices", skudHandler.GetAccessDevices)
+			skud.POST("/devices", skudHandler.CreateAccessDevice)
+			skud.DELETE("/devices/:id", skudHandler.DeleteAccessDevice)
+
+			// Cards management
+			skud.GET("/cards", skudHandler.GetCards)
+			skud.GET("/cards/:id", skudHandler.GetCard)
+			skud.PATCH("/cards/:id/status", skudHandler.UpdateCardStatus)
+			skud.DELETE("/cards/:id", skudHandler.DeleteCard)
+
+			// Access logs
+			skud.GET("/logs", skudHandler.GetAccessLogs)
+		}
+	}
+
+	// SKUD ESP device endpoints (device auth via X-Device-ID and X-API-Key headers)
+	skudApi := v1.Group("/access")
+	{
+		skudApi.POST("/verify", skudHandler.VerifyAccess)
+		skudApi.POST("/register", skudHandler.RegisterCard)
 	}
 
 	// Start alerting service

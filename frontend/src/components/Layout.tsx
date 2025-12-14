@@ -13,6 +13,7 @@ import {
   Sun,
   Menu,
   X,
+  CreditCard,
 } from 'lucide-react';
 import { useAuthStore } from '../contexts/authStore';
 import { useSettingsStore, useTranslation } from '../contexts/settingsStore';
@@ -54,6 +55,7 @@ export default function Layout() {
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: t.dashboard },
     { to: '/devices', icon: Cpu, label: t.devices },
+    { to: '/skud', icon: CreditCard, label: 'SKUD' },
     { to: '/settings', icon: Settings, label: t.settings },
   ];
 

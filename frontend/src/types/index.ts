@@ -107,8 +107,56 @@ export interface CreateCommandRequest {
 }
 
 export interface WebSocketMessage {
-  type: 'metrics' | 'device_status';
+  type: 'metrics' | 'device_status' | 'access_log';
   device_id?: string;
   data: Record<string, unknown>;
+}
+
+// ==================== SKUD (Access Control) Types ====================
+
+export type CardStatus = 'pending' | 'active' | 'disabled';
+
+export interface Card {
+  id: string;
+  card_uid: string;
+  status: CardStatus;
+  devices?: DeviceBrief[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceBrief {
+  id: string;
+  device_id: string;
+  name: string;
+}
+
+export interface AccessDevice {
+  id: string;
+  device_id: string;
+  secret_key: string;
+  name?: string;
+  created_at: string;
+}
+
+export interface AccessLog {
+  id: string;
+  device_id: string;
+  card_uid: string;
+  card_type: string;
+  action: string;
+  status: string;
+  allowed: boolean;
+  created_at: string;
+}
+
+export interface CreateAccessDeviceRequest {
+  device_id: string;
+  secret_key: string;
+  name?: string;
+}
+
+export interface UpdateCardStatusRequest {
+  status: CardStatus;
 }
 

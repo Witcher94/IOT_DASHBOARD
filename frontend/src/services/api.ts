@@ -10,6 +10,11 @@ import type {
   CreateDeviceRequest,
   CreateCommandRequest,
   GatewayTopology,
+  Card,
+  AccessDevice,
+  AccessLog,
+  CreateAccessDeviceRequest,
+  UpdateCardStatusRequest,
 } from '../types';
 
 // В production API на тому ж домені через LB path routing
@@ -211,6 +216,64 @@ export interface LogEntry {
   level: string;
   message: string;
 }
+
+// SKUD (Access Control)
+export const skudApi = {
+  // Access Devices
+  getAccessDevices: async (): Promise<AccessDevice[]> => {
+    const { data } = await api.get('/skud/devices');
+    return data || [];
+  },
+
+  createAccessDevice: async (req: CreateAccessDeviceRequest): Promise<AccessDevice> => {
+    const { data } = await api.post('/skud/devices', req);
+    return data;
+  },
+
+  deleteAccessDevice: async (id: string): Promise<void> => {
+    await api.delete(`/skud/devices/${id}`);
+  },
+
+  // Cards
+  getCards: async (status?: string): Promise<Card[]> => {
+    const params = status ? { status } : {};
+    const { data } = await api.get('/skud/cards', { params });
+    return data || [];
+  },
+
+  getCard: async (id: string): Promise<Card> => {
+    const { data } = await api.get(`/skud/cards/${id}`);
+    return data;
+  },
+
+  updateCardStatus: async (id: string, req: UpdateCardStatusRequest): Promise<Card> => {
+    const { data } = await api.patch(`/skud/cards/${id}/status`, req);
+    return data;
+  },
+
+  deleteCard: async (id: string): Promise<void> => {
+    await api.delete(`/skud/cards/${id}`);
+  },
+
+  // Access Logs
+  getAccessLogs: async (filters?: {
+    action?: string;
+    allowed?: boolean;
+    card_uid?: string;
+    device_id?: string;
+    limit?: number;
+  }): Promise<AccessLog[]> => {
+    const params: Record<string, string> = {};
+    if (filters?.action) params.action = filters.action;
+    if (filters?.allowed !== undefined) params.allowed = String(filters.allowed);
+    if (filters?.card_uid) params.card_uid = filters.card_uid;
+    if (filters?.device_id) params.device_id = filters.device_id;
+    if (filters?.limit) params.limit = String(filters.limit);
+    
+    const { data } = await api.get('/skud/logs', { params });
+    return data || [];
+  },
+};
 
 export default api;
 

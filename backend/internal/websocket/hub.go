@@ -127,6 +127,30 @@ func (h *Hub) BroadcastDeviceStatus(userID uuid.UUID, deviceID uuid.UUID, isOnli
 	})
 }
 
+// BroadcastAccessLog broadcasts SKUD access log to all connected clients
+func (h *Hub) BroadcastAccessLog(logData interface{}) {
+	data, err := json.Marshal(&Message{
+		Type: "access_log",
+		Data: logData,
+	})
+	if err != nil {
+		log.Printf("Error marshaling access log: %v", err)
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		select {
+		case client.Send <- data:
+		default:
+			close(client.Send)
+			delete(h.clients, client)
+		}
+	}
+}
+
 func (c *Client) ReadPump() {
 	defer func() {
 		c.Hub.Unregister(c)

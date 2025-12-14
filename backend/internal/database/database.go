@@ -125,6 +125,48 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_device_shares_device_id ON device_shares(device_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_device_shares_shared_with ON device_shares(shared_with_id)`,
+		// SKUD (Access Control) tables
+		`CREATE TABLE IF NOT EXISTS access_devices (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			device_id VARCHAR(64) UNIQUE NOT NULL,
+			secret_key VARCHAR(255) NOT NULL,
+			name VARCHAR(255),
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS cards (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			card_uid VARCHAR(64) UNIQUE NOT NULL,
+			status VARCHAR(32) DEFAULT 'pending',
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS card_devices (
+			card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+			device_id UUID NOT NULL REFERENCES access_devices(id) ON DELETE CASCADE,
+			PRIMARY KEY (card_id, device_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS access_logs (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			device_id VARCHAR(64),
+			card_uid VARCHAR(64),
+			card_type VARCHAR(32),
+			action VARCHAR(32) NOT NULL,
+			status VARCHAR(32),
+			allowed BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cards_card_uid ON cards(card_uid)`,
+		`CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_devices_device_id ON access_devices(device_id)`,
+		// Access logs indexes for fast filtering
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_created_at ON access_logs(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_card_uid ON access_logs(card_uid)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_device_id ON access_logs(device_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_action ON access_logs(action)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_allowed ON access_logs(allowed)`,
+		// Composite index for common filter combinations
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_allowed_created ON access_logs(allowed, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_action_created ON access_logs(action, created_at DESC)`,
 	}
 
 	for _, migration := range migrations {

@@ -246,3 +246,84 @@ type DashboardStats struct {
 	AvgTemp       float64 `json:"avg_temperature"`
 	AvgHumidity   float64 `json:"avg_humidity"`
 }
+
+// ==================== SKUD (Access Control) Models ====================
+
+// CardStatus types
+const (
+	CardStatusPending  = "pending"
+	CardStatusActive   = "active"
+	CardStatusDisabled = "disabled"
+)
+
+// Card представляє NFC/RFID картку доступу
+type Card struct {
+	ID        uuid.UUID      `json:"id"`
+	CardUID   string         `json:"card_uid"`
+	Status    string         `json:"status"` // pending, active, disabled
+	Devices   []DeviceBrief  `json:"devices,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// DeviceBrief - короткий опис пристрою для зв'язку з карткою
+type DeviceBrief struct {
+	ID       uuid.UUID `json:"id"`
+	DeviceID string    `json:"device_id"` // hardware device_id
+	Name     string    `json:"name"`
+}
+
+// AccessDevice представляє ESP пристрій СКУД з секретним ключем
+type AccessDevice struct {
+	ID        uuid.UUID `json:"id"`
+	DeviceID  string    `json:"device_id"`  // hardware identifier
+	SecretKey string    `json:"secret_key"` // API key for device authentication
+	Name      string    `json:"name,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// AccessVerifyRequest запит на верифікацію доступу
+type AccessVerifyRequest struct {
+	CardUID  string `json:"card_uid" binding:"required"`
+	CardType string `json:"card_type"`
+}
+
+// AccessVerifyResponse відповідь на верифікацію
+type AccessVerifyResponse struct {
+	Access bool `json:"access"`
+}
+
+// AccessRegisterRequest запит на реєстрацію нової картки
+type AccessRegisterRequest struct {
+	CardUID  string `json:"card_uid" binding:"required"`
+	CardType string `json:"card_type"`
+}
+
+// AccessRegisterResponse відповідь на реєстрацію
+type AccessRegisterResponse struct {
+	Status string `json:"status"`
+}
+
+// UpdateCardStatusRequest запит на оновлення статусу картки
+type UpdateCardStatusRequest struct {
+	Status string `json:"status" binding:"required"`
+}
+
+// CreateAccessDeviceRequest запит на створення пристрою СКУД
+type CreateAccessDeviceRequest struct {
+	DeviceID  string `json:"device_id" binding:"required"`
+	SecretKey string `json:"secret_key" binding:"required"`
+	Name      string `json:"name"`
+}
+
+// AccessLog запис логу доступу
+type AccessLog struct {
+	ID        uuid.UUID `json:"id"`
+	DeviceID  string    `json:"device_id"`
+	CardUID   string    `json:"card_uid"`
+	CardType  string    `json:"card_type"`
+	Action    string    `json:"action"` // verify, register, card_status, card_delete
+	Status    string    `json:"status"`
+	Allowed   bool      `json:"allowed"`
+	CreatedAt time.Time `json:"created_at"`
+}
