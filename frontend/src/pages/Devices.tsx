@@ -11,6 +11,7 @@ interface DeviceMetrics {
   temperature?: number;
   humidity?: number;
   rssi?: number;
+  freeHeap?: number;
 }
 
 export default function Devices() {
@@ -42,6 +43,7 @@ export default function Devices() {
                 temperature: latest.temperature ?? undefined,
                 humidity: latest.humidity ?? undefined,
                 rssi: latest.rssi ?? undefined,
+                freeHeap: latest.free_heap ?? undefined,
               },
             }));
           }
@@ -177,6 +179,7 @@ export default function Devices() {
                 temperature={deviceMetrics[device.id]?.temperature}
                 humidity={deviceMetrics[device.id]?.humidity}
                 rssi={deviceMetrics[device.id]?.rssi}
+                freeHeap={deviceMetrics[device.id]?.freeHeap}
                 onDelete={() => {
                   if (confirm(t.confirm + '?')) {
                     deleteMutation.mutate(device.id);

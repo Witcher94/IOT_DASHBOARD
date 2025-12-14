@@ -22,6 +22,7 @@ interface DeviceCardProps {
   temperature?: number | null;
   humidity?: number | null;
   rssi?: number | null;
+  freeHeap?: number | null;
 }
 
 export default function DeviceCard({ 
@@ -31,7 +32,8 @@ export default function DeviceCard({
   onDelete,
   temperature,
   humidity,
-  rssi 
+  rssi,
+  freeHeap
 }: DeviceCardProps) {
   const { formatRelative } = useDateFormat();
   const t = useTranslation();
@@ -112,7 +114,7 @@ export default function DeviceCard({
               </div>
               <div className="text-center p-2 rounded-lg bg-dark-800/50">
                 <Cpu className="w-4 h-4 text-green-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatCpuUsage(rssi)}</p>
+                <p className="text-sm font-medium">{formatCpuUsage(freeHeap)}</p>
               </div>
             </>
           ) : (
