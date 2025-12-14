@@ -21,19 +21,19 @@ type SKUDHandler struct {
 
 func NewSKUDHandler(db *database.DB, hub *websocket.Hub) *SKUDHandler {
 	handler := &SKUDHandler{db: db, hub: hub}
-	// Start background nonce cleanup
-	go handler.startNonceCleanup()
+	// Start background challenge cleanup
+	go handler.startChallengeCleanup()
 	return handler
 }
 
-// startNonceCleanup periodically cleans up old nonces
-func (h *SKUDHandler) startNonceCleanup() {
-	ticker := time.NewTicker(5 * time.Minute)
+// startChallengeCleanup periodically cleans up expired challenges
+func (h *SKUDHandler) startChallengeCleanup() {
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := h.db.CleanupOldNonces(context.Background()); err != nil {
-			log.Printf("[SKUD] Failed to cleanup nonces: %v", err)
+		if err := h.db.CleanupExpiredChallenges(context.Background()); err != nil {
+			log.Printf("[SKUD] Failed to cleanup challenges: %v", err)
 		}
 	}
 }
@@ -45,6 +45,46 @@ func (h *SKUDHandler) getDeviceFromToken(c *gin.Context) (*models.Device, error)
 		return nil, nil
 	}
 	return h.db.GetDeviceByToken(c.Request.Context(), token)
+}
+
+// ==================== Challenge Endpoint (for SKUD devices) ====================
+
+// GetChallenge generates a one-time challenge for SKUD device authentication
+// GET /access/challenge
+func (h *SKUDHandler) GetChallenge(c *gin.Context) {
+	// Authenticate device via X-Device-Token
+	device, err := h.getDeviceFromToken(c)
+	if device == nil || err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":      "Invalid or missing device token",
+			"error_code": "INVALID_DEVICE_TOKEN",
+		})
+		return
+	}
+
+	// Only SKUD devices need challenges
+	if device.DeviceType != models.DeviceTypeSKUD {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Challenge not required for this device type",
+			"error_code": "NOT_SKUD_DEVICE",
+		})
+		return
+	}
+
+	// Generate and store challenge
+	challenge, err := h.db.CreateChallenge(c.Request.Context(), device.ID)
+	if err != nil {
+		log.Printf("[SKUD] Failed to create challenge for device %s: %v", device.Name, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate challenge"})
+		return
+	}
+
+	log.Printf("[SKUD] Challenge generated for device %s", device.Name)
+
+	c.JSON(http.StatusOK, models.ChallengeResponse{
+		Challenge: challenge,
+		ExpiresIn: 30, // seconds
+	})
 }
 
 // ==================== Card Endpoints ====================
@@ -169,7 +209,7 @@ func (h *SKUDHandler) DeleteCard(c *gin.Context) {
 
 // ==================== ESP Device Access Endpoints ====================
 // These endpoints use X-Device-Token (same token as IoT devices)
-// with additional replay attack protection via nonce + timestamp
+// SKUD devices require challenge-response authentication
 
 func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	// Authenticate device via X-Device-Token
@@ -186,21 +226,33 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	var req models.AccessVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Invalid request: card_uid, nonce, timestamp required",
+			"error":      "Invalid request: card_uid required",
 			"error_code": "INVALID_REQUEST",
 		})
 		return
 	}
 
-	// Validate nonce (replay attack protection)
-	if err := h.db.CheckAndStoreNonce(c.Request.Context(), device.ID, req.Nonce, req.Timestamp); err != nil {
-		log.Printf("[SKUD] Replay attack detected: device=%s nonce=%s error=%v", device.Name, req.Nonce, err)
-		c.JSON(http.StatusForbidden, gin.H{
-			"error":      "Request rejected: possible replay attack",
-			"error_code": "REPLAY_DETECTED",
-			"access":     false,
-		})
-		return
+	// SKUD devices require challenge-response authentication
+	if device.DeviceType == models.DeviceTypeSKUD {
+		if req.Challenge == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":      "Challenge required for SKUD devices. Call GET /access/challenge first.",
+				"error_code": "CHALLENGE_REQUIRED",
+				"access":     false,
+			})
+			return
+		}
+
+		// Validate and consume challenge (one-time use)
+		if err := h.db.ValidateAndConsumeChallenge(c.Request.Context(), device.ID, req.Challenge); err != nil {
+			log.Printf("[SKUD] Invalid challenge: device=%s error=%v", device.Name, err)
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":      "Invalid or expired challenge",
+				"error_code": "INVALID_CHALLENGE",
+				"access":     false,
+			})
+			return
+		}
 	}
 
 	deviceName := device.Name
@@ -240,20 +292,31 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 	var req models.AccessRegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Invalid request: card_uid, nonce, timestamp required",
+			"error":      "Invalid request: card_uid required",
 			"error_code": "INVALID_REQUEST",
 		})
 		return
 	}
 
-	// Validate nonce (replay attack protection)
-	if err := h.db.CheckAndStoreNonce(c.Request.Context(), device.ID, req.Nonce, req.Timestamp); err != nil {
-		log.Printf("[SKUD] Replay attack detected: device=%s nonce=%s error=%v", device.Name, req.Nonce, err)
-		c.JSON(http.StatusForbidden, gin.H{
-			"error":      "Request rejected: possible replay attack",
-			"error_code": "REPLAY_DETECTED",
-		})
-		return
+	// SKUD devices require challenge-response authentication
+	if device.DeviceType == models.DeviceTypeSKUD {
+		if req.Challenge == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":      "Challenge required for SKUD devices. Call GET /access/challenge first.",
+				"error_code": "CHALLENGE_REQUIRED",
+			})
+			return
+		}
+
+		// Validate and consume challenge (one-time use)
+		if err := h.db.ValidateAndConsumeChallenge(c.Request.Context(), device.ID, req.Challenge); err != nil {
+			log.Printf("[SKUD] Invalid challenge: device=%s error=%v", device.Name, err)
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":      "Invalid or expired challenge",
+				"error_code": "INVALID_CHALLENGE",
+			})
+			return
+		}
 	}
 
 	deviceName := device.Name

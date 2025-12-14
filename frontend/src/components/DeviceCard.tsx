@@ -84,9 +84,18 @@ export default function DeviceCard({
                     🌐
                   </span>
                 )}
+                {device.device_type === 'skud' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                    🔐
+                  </span>
+                )}
               </div>
               <p className="text-xs text-dark-400">
-                {device.device_type === 'gateway' ? 'Raspberry Pi' : (device.platform || 'ESP')} • {device.chip_id?.slice(0, 8) || 'Unknown'}
+                {device.device_type === 'gateway' 
+                  ? 'Raspberry Pi' 
+                  : device.device_type === 'skud'
+                    ? 'Access Control'
+                    : (device.platform || 'ESP')} • {device.chip_id?.slice(0, 8) || 'Unknown'}
               </p>
             </div>
           </div>

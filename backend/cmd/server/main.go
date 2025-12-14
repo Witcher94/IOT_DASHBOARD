@@ -187,11 +187,13 @@ func main() {
 		}
 	}
 
-	// SKUD ESP device endpoints (device auth via X-Device-Token + nonce/timestamp for replay protection)
+	// SKUD ESP device endpoints (device auth via X-Device-Token)
+	// SKUD devices use challenge-response: GET /challenge first, then POST /verify with challenge
 	skudApi := v1.Group("/access")
 	{
-		skudApi.POST("/verify", skudHandler.VerifyAccess)
-		skudApi.POST("/register", skudHandler.RegisterCard)
+		skudApi.GET("/challenge", skudHandler.GetChallenge)  // Get one-time challenge (SKUD only)
+		skudApi.POST("/verify", skudHandler.VerifyAccess)    // Verify card access
+		skudApi.POST("/register", skudHandler.RegisterCard)  // Register new card
 	}
 
 	// Start alerting service

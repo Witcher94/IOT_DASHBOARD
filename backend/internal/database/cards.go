@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strconv"
 	"time"
@@ -10,38 +11,68 @@ import (
 	"github.com/pfaka/iot-dashboard/internal/models"
 )
 
-// ==================== Nonce Management (Replay Attack Protection) ====================
+// ==================== Challenge Management (SKUD Challenge-Response) ====================
 
-// CheckAndStoreNonce checks if nonce was used and stores it if not
-// Returns error if nonce was already used or timestamp is too old
-func (db *DB) CheckAndStoreNonce(ctx context.Context, deviceID uuid.UUID, nonce string, timestamp int64) error {
-	// Check timestamp validity (allow 5 minute window)
-	now := time.Now().Unix()
-	maxAge := int64(300) // 5 minutes
+// CreateChallenge generates and stores a new challenge for a SKUD device
+// Only one active challenge per device (replaces existing)
+func (db *DB) CreateChallenge(ctx context.Context, deviceID uuid.UUID) (string, error) {
+	// Generate random 32-char hex challenge
+	challenge := generateRandomHex(32)
 
-	if timestamp < now-maxAge || timestamp > now+60 {
-		return fmt.Errorf("timestamp out of valid range")
-	}
-
-	// Try to insert nonce (will fail if duplicate due to unique index)
+	// Upsert challenge (replace existing for this device)
 	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO access_nonces (device_id, nonce, timestamp)
-		VALUES ($1, $2, $3)
-	`, deviceID, nonce, timestamp)
+		INSERT INTO access_challenges (device_id, challenge, expires_at)
+		VALUES ($1, $2, NOW() + INTERVAL '30 seconds')
+		ON CONFLICT (device_id) DO UPDATE SET
+			challenge = EXCLUDED.challenge,
+			created_at = NOW(),
+			expires_at = NOW() + INTERVAL '30 seconds'
+	`, deviceID, challenge)
 
 	if err != nil {
-		return fmt.Errorf("nonce already used or invalid")
+		return "", err
+	}
+
+	return challenge, nil
+}
+
+// ValidateAndConsumeChallenge checks if the challenge is valid and removes it
+// Returns error if challenge is invalid, expired, or already used
+func (db *DB) ValidateAndConsumeChallenge(ctx context.Context, deviceID uuid.UUID, challenge string) error {
+	// Try to delete the challenge if it matches and is not expired
+	result, err := db.Pool.Exec(ctx, `
+		DELETE FROM access_challenges
+		WHERE device_id = $1 AND challenge = $2 AND expires_at > NOW()
+	`, deviceID, challenge)
+
+	if err != nil {
+		return fmt.Errorf("database error: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("invalid or expired challenge")
 	}
 
 	return nil
 }
 
-// CleanupOldNonces removes nonces older than 10 minutes
-func (db *DB) CleanupOldNonces(ctx context.Context) error {
+// CleanupExpiredChallenges removes expired challenges
+func (db *DB) CleanupExpiredChallenges(ctx context.Context) error {
 	_, err := db.Pool.Exec(ctx, `
-		DELETE FROM access_nonces WHERE created_at < NOW() - INTERVAL '10 minutes'
+		DELETE FROM access_challenges WHERE expires_at < NOW()
 	`)
 	return err
+}
+
+// generateRandomHex generates a random hex string of specified length
+func generateRandomHex(length int) string {
+	bytes := make([]byte, length/2)
+	for i := range bytes {
+		bytes[i] = byte(time.Now().UnixNano()&0xFF) ^ byte(i*17)
+	}
+	// Use crypto/rand for better randomness
+	_, _ = rand.Read(bytes)
+	return fmt.Sprintf("%x", bytes)
 }
 
 // ==================== Cards ====================

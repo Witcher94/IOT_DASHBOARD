@@ -13,7 +13,7 @@ export interface Device {
   user_id: string;
   name: string;
   token: string;
-  device_type?: string; // simple_device, gateway, mesh_node
+  device_type?: string; // simple_device, gateway, mesh_node, skud
   gateway_id?: string; // For mesh nodes
   mesh_node_id?: number; // painlessMesh node ID
   chip_id?: string;
@@ -89,8 +89,10 @@ export interface DashboardStats {
 
 export interface CreateDeviceRequest {
   name: string;
-  device_type?: string; // simple_device, gateway
+  device_type?: string; // simple_device, gateway, skud
 }
+
+export type DeviceType = 'simple_device' | 'gateway' | 'mesh_node' | 'skud';
 
 export interface GatewayTopology {
   gateway: Device;

@@ -49,6 +49,7 @@ export const translations = {
     // Navigation
     dashboard: 'Дашборд',
     devices: 'Пристрої',
+    deviceType: 'Тип пристрою',
     admin: 'Адмін',
     settings: 'Налаштування',
     logout: 'Вийти',
@@ -140,6 +141,7 @@ export const translations = {
     // Navigation
     dashboard: 'Dashboard',
     devices: 'Devices',
+    deviceType: 'Device Type',
     admin: 'Admin',
     settings: 'Settings',
     logout: 'Logout',

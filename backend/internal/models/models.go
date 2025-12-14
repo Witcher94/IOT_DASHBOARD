@@ -24,6 +24,7 @@ const (
 	DeviceTypeSimple   = "simple_device"
 	DeviceTypeGateway  = "gateway"
 	DeviceTypeMeshNode = "mesh_node"
+	DeviceTypeSKUD     = "skud" // Access control device with challenge-response auth
 )
 
 // Device представляє IoT пристрій
@@ -282,12 +283,11 @@ type AccessDevice struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// AccessVerifyRequest запит на верифікацію доступу (з replay protection)
+// AccessVerifyRequest запит на верифікацію доступу (з challenge-response для SKUD)
 type AccessVerifyRequest struct {
 	CardUID   string `json:"card_uid" binding:"required"`
 	CardType  string `json:"card_type"`
-	Nonce     string `json:"nonce" binding:"required"`     // Random 32-char hex string
-	Timestamp int64  `json:"timestamp" binding:"required"` // Unix timestamp
+	Challenge string `json:"challenge"` // Required for SKUD devices (challenge-response)
 }
 
 // AccessVerifyResponse відповідь на верифікацію
@@ -295,12 +295,17 @@ type AccessVerifyResponse struct {
 	Access bool `json:"access"`
 }
 
-// AccessRegisterRequest запит на реєстрацію нової картки (з replay protection)
+// AccessRegisterRequest запит на реєстрацію нової картки (з challenge-response для SKUD)
 type AccessRegisterRequest struct {
 	CardUID   string `json:"card_uid" binding:"required"`
 	CardType  string `json:"card_type"`
-	Nonce     string `json:"nonce" binding:"required"`     // Random 32-char hex string
-	Timestamp int64  `json:"timestamp" binding:"required"` // Unix timestamp
+	Challenge string `json:"challenge"` // Required for SKUD devices (challenge-response)
+}
+
+// ChallengeResponse відповідь з challenge для SKUD пристроїв
+type ChallengeResponse struct {
+	Challenge string `json:"challenge"`
+	ExpiresIn int    `json:"expires_in"` // seconds until expiration
 }
 
 // AccessRegisterResponse відповідь на реєстрацію

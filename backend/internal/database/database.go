@@ -162,16 +162,16 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_allowed_created ON access_logs(allowed, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_action_created ON access_logs(action, created_at DESC)`,
 
-		// Nonce table for replay attack protection
-		`CREATE TABLE IF NOT EXISTS access_nonces (
+		// Challenge table for SKUD challenge-response authentication
+		`CREATE TABLE IF NOT EXISTS access_challenges (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-			nonce VARCHAR(64) NOT NULL,
-			timestamp BIGINT NOT NULL,
-			created_at TIMESTAMP DEFAULT NOW()
+			challenge VARCHAR(64) NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			expires_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '30 seconds'
 		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_access_nonces_device_nonce ON access_nonces(device_id, nonce)`,
-		`CREATE INDEX IF NOT EXISTS idx_access_nonces_created_at ON access_nonces(created_at)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_access_challenges_device ON access_challenges(device_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_challenges_expires ON access_challenges(expires_at)`,
 	}
 
 	for _, migration := range migrations {

@@ -18,6 +18,7 @@ export default function Devices() {
   const t = useTranslation();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newDeviceName, setNewDeviceName] = useState('');
+  const [newDeviceType, setNewDeviceType] = useState<string>('simple_device');
   const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState(false);
   const [search, setSearch] = useState('');
@@ -86,13 +87,17 @@ export default function Devices() {
 
   const handleCreate = () => {
     if (newDeviceName.trim()) {
-      createMutation.mutate({ name: newDeviceName.trim() });
+      createMutation.mutate({ 
+        name: newDeviceName.trim(),
+        device_type: newDeviceType
+      });
     }
   };
 
   const handleCloseModal = () => {
     setShowAddModal(false);
     setNewDeviceName('');
+    setNewDeviceType('simple_device');
     setNewDeviceToken(null);
     setCopiedToken(false);
   };
@@ -268,7 +273,7 @@ export default function Devices() {
 
               {!newDeviceToken ? (
                 <>
-                  <div className="mb-6">
+                  <div className="mb-4">
                     <label className="block text-sm text-dark-400 mb-2">{t.devices}</label>
                     <input
                       type="text"
@@ -278,6 +283,23 @@ export default function Devices() {
                       className="input-field"
                       autoFocus
                     />
+                  </div>
+                  <div className="mb-6">
+                    <label className="block text-sm text-dark-400 mb-2">{t.deviceType || 'Device Type'}</label>
+                    <select
+                      value={newDeviceType}
+                      onChange={(e) => setNewDeviceType(e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="simple_device">IoT Sensor</option>
+                      <option value="gateway">Gateway</option>
+                      <option value="skud">SKUD (Access Control)</option>
+                    </select>
+                    {newDeviceType === 'skud' && (
+                      <p className="text-xs text-amber-400 mt-2">
+                        ⚠️ SKUD devices use challenge-response authentication
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-3">
                     <button onClick={handleCloseModal} className="btn-secondary flex-1">
