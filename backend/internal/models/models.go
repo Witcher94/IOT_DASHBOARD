@@ -340,8 +340,28 @@ type AccessLog struct {
 	DeviceID  string    `json:"device_id"`
 	CardUID   string    `json:"card_uid"`
 	CardType  string    `json:"card_type"`
-	Action    string    `json:"action"` // verify, register, card_status, card_delete
+	Action    string    `json:"action"` // verify, register, card_status, card_delete, desfire_auth
 	Status    string    `json:"status"`
 	Allowed   bool      `json:"allowed"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// ==================== DESFire Authentication Models ====================
+
+// DesfireStartRequest request for /access/desfire/start
+type DesfireStartRequest struct {
+	CardUID  string `json:"card_uid" binding:"required"`
+	CardType string `json:"card_type"`
+}
+
+// DesfireStepRequest request for /access/desfire/step
+type DesfireStepRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+	Response  string `json:"response" binding:"required"` // Hex encoded response from card
+}
+
+// DesfireProvisionConfirmRequest request for /access/desfire/confirm
+type DesfireProvisionConfirmRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+	Success   bool   `json:"success"`
 }

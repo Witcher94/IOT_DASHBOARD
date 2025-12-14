@@ -62,6 +62,13 @@ func main() {
 	hub := websocket.NewHub()
 	go hub.Run()
 
+	// Initialize DESFire service
+	desfireService, err := services.NewDesfireService(cfg.DesfireMasterKey)
+	if err != nil {
+		log.Printf("Warning: DESFire service not initialized: %v", err)
+		desfireService = nil
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(cfg, db, authService)
 	deviceHandler := handlers.NewDeviceHandler(db, deviceService, hub, alertingService)
@@ -70,6 +77,12 @@ func main() {
 	wsHandler := handlers.NewWebSocketHandler(hub)
 	gatewayHandler := handlers.NewGatewayHandler(db, hub)
 	skudHandler := handlers.NewSKUDHandler(db, hub)
+	
+	// DESFire handler (only if service is available)
+	var desfireHandler *handlers.DesfireHandler
+	if desfireService != nil {
+		desfireHandler = handlers.NewDesfireHandler(db, hub, desfireService)
+	}
 
 	// Setup Gin router
 	router := gin.Default()
@@ -199,6 +212,13 @@ func main() {
 		skudApi.GET("/challenge", skudHandler.GetChallenge)  // Get one-time challenge (SKUD only)
 		skudApi.POST("/verify", skudHandler.VerifyAccess)    // Verify card access
 		skudApi.POST("/register", skudHandler.RegisterCard)  // Register new card
+		
+		// DESFire cloud authentication endpoints
+		if desfireHandler != nil {
+			skudApi.POST("/desfire/start", desfireHandler.DesfireStart)      // Start DESFire auth session
+			skudApi.POST("/desfire/step", desfireHandler.DesfireStep)        // Process auth step
+			skudApi.POST("/desfire/confirm", desfireHandler.DesfireProvisionConfirm) // Confirm provisioning
+		}
 	}
 
 	// Start alerting service

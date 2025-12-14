@@ -16,6 +16,9 @@ type Config struct {
 	FrontendURL     string
 	AdminEmail      string
 	
+	// DESFire Master Key (32 hex chars = 16 bytes AES-128)
+	DesfireMasterKey string
+	
 	// Alerting (логування для GCP Cloud Monitoring)
 	AlertingEnabled       bool
 	AlertCheckInterval    time.Duration
@@ -39,6 +42,10 @@ func Load() *Config {
 		GoogleCallback:  getEnv("GOOGLE_CALLBACK_URL", "http://localhost:8080/api/v1/auth/google/callback"),
 		FrontendURL:     getEnv("FRONTEND_URL", "http://localhost:3000"),
 		AdminEmail:      getEnv("ADMIN_EMAIL", "admin@example.com"),
+		
+		// DESFire Master Key - CHANGE IN PRODUCTION!
+		// Default is a random key for development only
+		DesfireMasterKey: getEnv("DESFIRE_MASTER_KEY", "0123456789ABCDEF0123456789ABCDEF"),
 		
 		// Alerting
 		AlertingEnabled:       getEnvBool("ALERTING_ENABLED", true),
