@@ -249,6 +249,21 @@ func main() {
 		}
 	}()
 
+	// Background job: Clean expired card tokens and old challenges
+	go func() {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if err := db.CleanupExpiredCardTokens(context.Background()); err != nil {
+				log.Printf("Error cleaning expired card tokens: %v", err)
+			}
+			if err := db.CleanupExpiredChallenges(context.Background()); err != nil {
+				log.Printf("Error cleaning expired challenges: %v", err)
+			}
+		}
+	}()
+
 	// Start server
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

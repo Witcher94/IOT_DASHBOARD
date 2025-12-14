@@ -300,13 +300,15 @@ type AccessDevice struct {
 type AccessVerifyRequest struct {
 	CardUID   string `json:"card_uid" binding:"required"`
 	CardType  string `json:"card_type"`
-	Challenge string `json:"challenge"` // Required for SKUD devices (challenge-response)
+	Challenge string `json:"challenge"`            // Required for SKUD devices (challenge-response)
+	CardToken string `json:"card_token,omitempty"` // Optional: DESFire card token for extra security
 }
 
 // AccessVerifyResponse відповідь на верифікацію
 type AccessVerifyResponse struct {
-	Access   bool   `json:"access"`
-	CardName string `json:"card_name,omitempty"` // Display name for ESP screen
+	Access       bool   `json:"access"`
+	CardName     string `json:"card_name,omitempty"`      // Display name for ESP screen
+	TokenUpdated bool   `json:"token_updated,omitempty"` // True if old token was used and promoted
 }
 
 // AccessRegisterRequest запит на реєстрацію нової картки (з challenge-response для SKUD)

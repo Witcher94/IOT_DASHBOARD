@@ -124,6 +124,7 @@ export interface Card {
   card_type: string; // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
   name: string;
   status: CardStatus;
+  token?: string; // Authentication token (only shown on detail page)
   devices?: DeviceBrief[];
   created_at: string;
   updated_at: string;

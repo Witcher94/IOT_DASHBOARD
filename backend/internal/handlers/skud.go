@@ -467,9 +467,31 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	// Check if card is active and linked to this device
 	linkedToDevice, _ := h.db.IsCardLinkedToDevice(c.Request.Context(), card.ID, device.ID)
 	allowed := card.Status == models.CardStatusActive && linkedToDevice
+	tokenUpdated := false
 
-	log.Printf("[SKUD] Verify: device=%s card=%s status=%s linked=%v allowed=%v",
-		deviceName, req.CardUID, card.Status, linkedToDevice, allowed)
+	// Optional: Verify card token if provided (for DESFire cards with token authentication)
+	if req.CardToken != "" && allowed {
+		tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
+		if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
+			log.Printf("[SKUD] Card token verification failed: device=%s card=%s", deviceName, req.CardUID)
+			h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
+			c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
+			return
+		}
+
+		// If old token was used successfully, promote it (rotate completed)
+		if !isCurrent {
+			if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
+				log.Printf("[SKUD] Failed to promote token: %v", err)
+			} else {
+				log.Printf("[SKUD] Old token promoted to current for card %s", req.CardUID)
+				tokenUpdated = true
+			}
+		}
+	}
+
+	log.Printf("[SKUD] Verify: device=%s card=%s status=%s linked=%v allowed=%v tokenUpdated=%v",
+		deviceName, req.CardUID, card.Status, linkedToDevice, allowed, tokenUpdated)
 
 	h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", card.Status, allowed)
 
@@ -480,8 +502,9 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.AccessVerifyResponse{
-		Access:   allowed,
-		CardName: cardName,
+		Access:       allowed,
+		CardName:     cardName,
+		TokenUpdated: tokenUpdated,
 	})
 }
 

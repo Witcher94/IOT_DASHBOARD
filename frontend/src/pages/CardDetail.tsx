@@ -13,6 +13,8 @@ import {
   Check,
   X,
   Copy,
+  RefreshCw,
+  Key,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { skudApi, devicesApi } from '../services/api';
@@ -108,9 +110,28 @@ export default function CardDetail() {
     onError: () => toast.error(t.error),
   });
 
+  const regenerateTokenMutation = useMutation({
+    mutationFn: () => skudApi.regenerateCardToken(id!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['card', id] });
+      setNewToken(data.token);
+      toast.success('Токен перегенеровано. Старий токен дійсний ще 24 години.');
+    },
+    onError: () => toast.error(t.error),
+  });
+
   // Editing state
   const [isEditing, setIsEditing] = useState(false);
   const [editingName, setEditingName] = useState('');
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
+
+  const copyToken = async (token: string) => {
+    await navigator.clipboard.writeText(token);
+    setCopiedToken(true);
+    toast.success('Токен скопійовано');
+    setTimeout(() => setCopiedToken(false), 2000);
+  };
 
   const startEditing = () => {
     setEditingName(card?.name || '');
@@ -300,6 +321,73 @@ export default function CardDetail() {
               <span>{formatDate(card.updated_at)}</span>
             </div>
           </div>
+        </motion.div>
+
+        {/* Token Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="glass rounded-xl p-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Key className="w-5 h-5 text-primary-400" />
+            <h2 className="text-lg font-semibold">Токен автентифікації</h2>
+          </div>
+          
+          <p className="text-sm text-dark-400 mb-4">
+            Токен використовується для верифікації картки. При перегенерації старий токен залишається дійсним 24 години.
+          </p>
+
+          {/* Current/New Token Display */}
+          {(newToken || card.token) && (
+            <div className="mb-4">
+              <p className="text-xs text-dark-400 mb-2">
+                {newToken ? 'Новий токен:' : 'Поточний токен:'}
+              </p>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={newToken || card.token || ''}
+                  readOnly
+                  className="input-field pr-12 font-mono text-xs"
+                />
+                <button
+                  onClick={() => copyToken(newToken || card.token || '')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-dark-600 transition-colors"
+                >
+                  {copiedToken ? (
+                    <Check className="w-4 h-4 text-green-400" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-dark-400" />
+                  )}
+                </button>
+              </div>
+              {newToken && (
+                <p className="text-xs text-amber-400 mt-2">
+                  ⚠️ Збережіть токен! Він більше не буде показаний.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Regenerate Button */}
+          <button
+            onClick={() => {
+              if (confirm('Ви впевнені? Старий токен буде дійсний ще 24 години.')) {
+                regenerateTokenMutation.mutate();
+              }
+            }}
+            disabled={regenerateTokenMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-500/10 text-primary-300 hover:bg-primary-500/20 transition-colors border border-primary-500/30"
+          >
+            {regenerateTokenMutation.isPending ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            Перегенерувати токен
+          </button>
         </motion.div>
 
         {/* Linked Devices Section */}
