@@ -171,6 +171,148 @@ func (h *DeviceHandler) RegenerateToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": newToken})
 }
 
+// ClearChipID clears the chip_id for a device, allowing it to be re-bound to new hardware
+// This is useful when replacing a physical ESP32 device
+// DELETE /api/v1/devices/:id/chip-id
+func (h *DeviceHandler) ClearChipID(c *gin.Context) {
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	device, err := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Check ownership
+	userID, _ := c.Get("user_id")
+	isAdmin, _ := c.Get("is_admin")
+	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Only SKUD devices have chip_id protection
+	if device.DeviceType != models.DeviceTypeSKUD {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only SKUD devices support chip_id lock"})
+		return
+	}
+
+	if device.ChipID == nil || *device.ChipID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device chip_id is not set"})
+		return
+	}
+
+	oldChipID := *device.ChipID
+	if err := h.db.ClearDeviceChipID(c.Request.Context(), deviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear chip_id"})
+		return
+	}
+
+	log.Printf("[DEVICE] Chip ID cleared for device %s (was: %s)", device.Name, oldChipID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Chip ID cleared. Device can now be bound to new hardware.",
+		"old_chip_id": oldChipID,
+	})
+}
+
+// ConfirmChipID confirms the pending chip_id, locking the device to that hardware
+// POST /api/v1/devices/:id/chip-id/confirm
+func (h *DeviceHandler) ConfirmChipID(c *gin.Context) {
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	device, err := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Check ownership
+	userID, _ := c.Get("user_id")
+	isAdmin, _ := c.Get("is_admin")
+	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Only SKUD devices have chip_id protection
+	if device.DeviceType != models.DeviceTypeSKUD {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only SKUD devices support chip_id lock"})
+		return
+	}
+
+	if device.PendingChipID == nil || *device.PendingChipID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No pending chip_id to confirm"})
+		return
+	}
+
+	pendingChipID := *device.PendingChipID
+	if err := h.db.ConfirmChipID(c.Request.Context(), deviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to confirm chip_id"})
+		return
+	}
+
+	log.Printf("[DEVICE] Chip ID confirmed for device %s: %s", device.Name, pendingChipID)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Chip ID confirmed. Device is now locked to this hardware.",
+		"chip_id": pendingChipID,
+	})
+}
+
+// RejectChipID rejects the pending chip_id
+// DELETE /api/v1/devices/:id/chip-id/pending
+func (h *DeviceHandler) RejectChipID(c *gin.Context) {
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	device, err := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Check ownership
+	userID, _ := c.Get("user_id")
+	isAdmin, _ := c.Get("is_admin")
+	if device.UserID != userID.(uuid.UUID) && !isAdmin.(bool) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Only SKUD devices have chip_id protection
+	if device.DeviceType != models.DeviceTypeSKUD {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only SKUD devices support chip_id lock"})
+		return
+	}
+
+	if device.PendingChipID == nil || *device.PendingChipID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No pending chip_id to reject"})
+		return
+	}
+
+	rejectedChipID := *device.PendingChipID
+	if err := h.db.RejectPendingChipID(c.Request.Context(), deviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject chip_id"})
+		return
+	}
+
+	log.Printf("[DEVICE] Pending chip_id rejected for device %s: %s", device.Name, rejectedChipID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "Pending chip_id rejected.",
+		"rejected_chip_id": rejectedChipID,
+	})
+}
+
 func (h *DeviceHandler) GetMetrics(c *gin.Context) {
 	deviceID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

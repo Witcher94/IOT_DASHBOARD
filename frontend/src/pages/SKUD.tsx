@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,12 +18,22 @@ import {
   Pencil,
   Check,
   X,
+  Key,
+  Shield,
+  UserPlus,
+  RefreshCw,
+  Calendar,
+  Tag,
+  List,
+  GitBranch,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { skudApi, devicesApi } from '../services/api';
 import { useTranslation } from '../contexts/settingsStore';
 import { useAuthStore } from '../contexts/authStore';
-import type { CardStatus, AccessLog, Device } from '../types';
+import type { CardStatus, AccessLog, Device, AccessLogAction, CardType } from '../types';
 
 type TabType = 'cards' | 'logs';
 
@@ -59,6 +69,114 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString();
 }
 
+// Action labels and icons for logs
+const actionConfig: Record<AccessLogAction | string, { label: string; icon: React.ReactNode; color: string }> = {
+  verify: { label: 'Верифікація', icon: <Shield className="w-3.5 h-3.5" />, color: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
+  register: { label: 'Реєстрація', icon: <UserPlus className="w-3.5 h-3.5" />, color: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
+  card_status: { label: 'Зміна статусу', icon: <RefreshCw className="w-3.5 h-3.5" />, color: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  card_delete: { label: 'Видалення', icon: <Trash2 className="w-3.5 h-3.5" />, color: 'bg-rose-500/15 text-rose-300 border-rose-500/30' },
+  desfire_auth: { label: 'DESFire Auth', icon: <Key className="w-3.5 h-3.5" />, color: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' },
+  provision: { label: 'Провізійування', icon: <CreditCard className="w-3.5 h-3.5" />, color: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' },
+  key_rotation: { label: 'Ротація ключа', icon: <Key className="w-3.5 h-3.5" />, color: 'bg-pink-500/15 text-pink-300 border-pink-500/30' },
+  clone_attempt: { label: '⚠️ Клон!', icon: <Shield className="w-3.5 h-3.5" />, color: 'bg-red-600/30 text-red-300 border-red-500/50' },
+};
+
+// Card type labels and config
+const cardTypeLabels: Record<CardType | string, string> = {
+  MIFARE_CLASSIC_1K: 'MIFARE Classic 1K',
+  MIFARE_CLASSIC_4K: 'MIFARE Classic 4K',
+  MIFARE_DESFIRE: 'MIFARE DESFire',
+  MIFARE_ULTRALIGHT: 'MIFARE Ultralight',
+  UNKNOWN: 'Невідомий',
+};
+
+// Card type icons and colors
+const cardTypeConfig: Record<string, { icon: React.ReactNode; color: string; bgColor: string }> = {
+  MIFARE_CLASSIC_1K: { icon: <CreditCard className="w-4 h-4" />, color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
+  MIFARE_CLASSIC_4K: { icon: <CreditCard className="w-4 h-4" />, color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
+  MIFARE_DESFIRE: { icon: <Shield className="w-4 h-4" />, color: 'text-cyan-400', bgColor: 'bg-cyan-500/10' },
+  MIFARE_ULTRALIGHT: { icon: <CreditCard className="w-4 h-4" />, color: 'text-gray-400', bgColor: 'bg-gray-500/10' },
+  UNKNOWN: { icon: <CreditCard className="w-4 h-4" />, color: 'text-dark-400', bgColor: 'bg-dark-600/50' },
+};
+
+// Scenarios by card type - what actions are possible
+const cardTypeScenarios: Record<string, string[]> = {
+  MIFARE_CLASSIC_1K: ['register', 'verify', 'card_status', 'card_delete'],
+  MIFARE_CLASSIC_4K: ['register', 'verify', 'card_status', 'card_delete'],
+  MIFARE_DESFIRE: ['register', 'provision', 'desfire_auth', 'verify', 'key_rotation', 'card_status', 'card_delete'],
+  MIFARE_ULTRALIGHT: ['register', 'verify', 'card_status', 'card_delete'],
+  UNKNOWN: ['register', 'verify', 'card_status', 'card_delete'],
+};
+
+// Group logs by card_uid for tree view
+interface LogGroup {
+  card_uid: string;
+  card_type: string;
+  logs: AccessLog[];
+  lastAction: string;
+  lastTime: string;
+  hasErrors: boolean;
+  successCount: number;
+  failCount: number;
+}
+
+function groupLogsByCard(logs: AccessLog[]): LogGroup[] {
+  const groups: Record<string, LogGroup> = {};
+  
+  // Group logs by card_uid
+  for (const log of logs) {
+    if (!groups[log.card_uid]) {
+      groups[log.card_uid] = {
+        card_uid: log.card_uid,
+        card_type: log.card_type || 'UNKNOWN',
+        logs: [],
+        lastAction: log.action,
+        lastTime: log.created_at,
+        hasErrors: false,
+        successCount: 0,
+        failCount: 0,
+      };
+    }
+    groups[log.card_uid].logs.push(log);
+    if (!log.allowed) groups[log.card_uid].hasErrors = true;
+    if (log.allowed) groups[log.card_uid].successCount++;
+    else groups[log.card_uid].failCount++;
+  }
+  
+  // Sort groups by last activity, and logs within groups by time (newest first)
+  return Object.values(groups)
+    .map(group => ({
+      ...group,
+      logs: group.logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    }))
+    .sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime());
+}
+
+type LogViewMode = 'list' | 'tree';
+
+function ActionBadge({ action }: { action: string }) {
+  const config = actionConfig[action] || { label: action, icon: <FileText className="w-3.5 h-3.5" />, color: 'bg-gray-500/15 text-gray-300 border-gray-500/30' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border ${config.color}`}>
+      {config.icon}
+      {config.label}
+    </span>
+  );
+}
+
+function CardTypeBadge({ cardType }: { cardType: string }) {
+  const label = cardTypeLabels[cardType] || cardType || 'Невідомий';
+  const isDESFire = cardType === 'MIFARE_DESFIRE';
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs rounded-md ${
+      isDESFire ? 'bg-cyan-500/10 text-cyan-400' : 'bg-dark-600/50 text-dark-300'
+    }`}>
+      <Tag className="w-3 h-3" />
+      {label}
+    </span>
+  );
+}
+
 // WebSocket URL helper
 function getWsUrl(ticket: string): string {
   const apiUrl = import.meta.env.VITE_API_URL || `${window.location.origin}/api/v1`;
@@ -81,12 +199,30 @@ export default function SKUD() {
   const [logActionFilter, setLogActionFilter] = useState<string>('');
   const [logAllowedFilter, setLogAllowedFilter] = useState<string>(''); // '', 'true', 'false'
   const [logCardUidFilter, setLogCardUidFilter] = useState<string>('');
+  const [logCardTypeFilter, setLogCardTypeFilter] = useState<string>('');
+  const [logFromDate, setLogFromDate] = useState<string>('');
+  const [logToDate, setLogToDate] = useState<string>('');
+  const [logViewMode, setLogViewMode] = useState<LogViewMode>('list');
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+
+  // Toggle card expansion in tree view
+  const toggleCardExpanded = (cardUid: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(cardUid)) next.delete(cardUid);
+      else next.add(cardUid);
+      return next;
+    });
+  };
   
   // WebSocket state for logs
   const [wsConnected, setWsConnected] = useState(false);
   const [wsLogs, setWsLogs] = useState<AccessLog[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+
+  // Grouped logs for tree view (must be after wsLogs declaration)
+  const groupedLogs = useMemo(() => groupLogsByCard(wsLogs), [wsLogs]);
 
   // Fetch SKUD devices
   const { data: allDevices } = useQuery({
@@ -119,13 +255,16 @@ export default function SKUD() {
       if (logAllowedFilter === 'true') filters.allowed = true;
       if (logAllowedFilter === 'false') filters.allowed = false;
       if (logCardUidFilter) filters.card_uid = logCardUidFilter;
+      if (logCardTypeFilter) filters.card_type = logCardTypeFilter;
+      if (logFromDate) filters.from_date = logFromDate;
+      if (logToDate) filters.to_date = logToDate;
       
       const logs = await skudApi.getAccessLogs(filters);
       setWsLogs(logs);
     } catch (e) {
       console.error('[SKUD] Failed to load logs:', e);
     }
-  }, [logActionFilter, logAllowedFilter, logCardUidFilter, selectedDeviceId]);
+  }, [logActionFilter, logAllowedFilter, logCardUidFilter, logCardTypeFilter, logFromDate, logToDate, selectedDeviceId]);
 
   // Connect to WebSocket for real-time logs
   const connectWebSocket = useCallback(async () => {
@@ -528,7 +667,8 @@ export default function SKUD() {
         >
           {/* Filters */}
           <div className="glass rounded-xl p-4 mb-6">
-            <div className="flex flex-wrap items-center gap-4">
+            {/* Row 1: Main filters */}
+            <div className="flex flex-wrap items-center gap-3 mb-3">
               {/* Device filter */}
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-dark-400" />
@@ -546,7 +686,7 @@ export default function SKUD() {
                 </select>
               </div>
 
-              {/* Action filter */}
+              {/* Action filter - All 7 action types */}
               <div className="flex items-center gap-2">
                 <Filter className="w-4 h-4 text-dark-400" />
                 <select
@@ -555,23 +695,102 @@ export default function SKUD() {
                   className="input-field w-auto py-2 text-sm"
                 >
                   <option value="">Всі дії</option>
-                  <option value="verify">Верифікація</option>
-                  <option value="register">Реєстрація</option>
-                  <option value="card_status">Зміна статусу</option>
-                  <option value="card_delete">Видалення</option>
+                  <option value="verify">🛡️ Верифікація</option>
+                  <option value="register">👤 Реєстрація</option>
+                  <option value="card_status">🔄 Зміна статусу</option>
+                  <option value="card_delete">🗑️ Видалення</option>
+                  <option value="desfire_auth">🔐 DESFire Auth</option>
+                  <option value="provision">💳 Провізійування</option>
+                  <option value="key_rotation">🔑 Ротація ключа</option>
+                  <option value="clone_attempt">⚠️ Клон пристрою</option>
                 </select>
               </div>
 
-              {/* Allowed filter */}
+              {/* Result filter */}
               <select
                 value={logAllowedFilter}
                 onChange={(e) => setLogAllowedFilter(e.target.value)}
                 className="input-field w-auto py-2 text-sm"
               >
                 <option value="">Всі результати</option>
-                <option value="true">{t.allowed}</option>
-                <option value="false">{t.denied}</option>
+                <option value="true">✅ {t.allowed}</option>
+                <option value="false">❌ {t.denied}</option>
               </select>
+
+              {/* Card type filter */}
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-dark-400" />
+                <select
+                  value={logCardTypeFilter}
+                  onChange={(e) => setLogCardTypeFilter(e.target.value)}
+                  className="input-field w-auto py-2 text-sm"
+                >
+                  <option value="">Всі типи карток</option>
+                  <option value="MIFARE_CLASSIC_1K">MIFARE Classic 1K</option>
+                  <option value="MIFARE_CLASSIC_4K">MIFARE Classic 4K</option>
+                  <option value="MIFARE_DESFIRE">MIFARE DESFire</option>
+                  <option value="MIFARE_ULTRALIGHT">MIFARE Ultralight</option>
+                </select>
+              </div>
+
+              {/* View mode toggle */}
+              <div className="flex items-center gap-1 bg-dark-700/50 rounded-lg p-1">
+                <button
+                  onClick={() => setLogViewMode('list')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    logViewMode === 'list' 
+                      ? 'bg-primary-500/20 text-primary-300' 
+                      : 'text-dark-400 hover:text-dark-200'
+                  }`}
+                  title="Список"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setLogViewMode('tree')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    logViewMode === 'tree' 
+                      ? 'bg-primary-500/20 text-primary-300' 
+                      : 'text-dark-400 hover:text-dark-200'
+                  }`}
+                  title="Дерево по картках"
+                >
+                  <GitBranch className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Connection status */}
+              <div className={`ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${
+                wsConnected 
+                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' 
+                  : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+              }`}>
+                {wsConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                {wsConnected ? 'Live' : 'Offline'}
+              </div>
+            </div>
+
+            {/* Row 2: Date range and search */}
+            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-dark-700/50">
+              {/* Date range */}
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-dark-400" />
+                <input
+                  type="date"
+                  value={logFromDate}
+                  onChange={(e) => setLogFromDate(e.target.value)}
+                  className="input-field w-auto py-2 text-sm"
+                  placeholder="Від"
+                />
+                <span className="text-dark-400">—</span>
+                <input
+                  type="date"
+                  value={logToDate}
+                  onChange={(e) => setLogToDate(e.target.value)}
+                  className="input-field w-auto py-2 text-sm"
+                  placeholder="До"
+                />
+              </div>
 
               {/* Card UID search */}
               <div className="relative flex-1 min-w-[200px]">
@@ -586,12 +805,15 @@ export default function SKUD() {
               </div>
 
               {/* Reset filters */}
-              {(logActionFilter || logAllowedFilter || logCardUidFilter) && (
+              {(logActionFilter || logAllowedFilter || logCardUidFilter || logCardTypeFilter || logFromDate || logToDate) && (
                 <button
                   onClick={() => {
                     setLogActionFilter('');
                     setLogAllowedFilter('');
                     setLogCardUidFilter('');
+                    setLogCardTypeFilter('');
+                    setLogFromDate('');
+                    setLogToDate('');
                   }}
                   className="flex items-center gap-2 px-3 py-2 text-sm text-dark-300 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
                 >
@@ -599,65 +821,245 @@ export default function SKUD() {
                   Скинути
                 </button>
               )}
-
-              {/* Connection status */}
-              <div className={`ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${
-                wsConnected 
-                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' 
-                  : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
-              }`}>
-                {wsConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-                {wsConnected ? 'Live' : 'Offline'}
-              </div>
             </div>
             
             <div className="mt-3 text-xs text-dark-400">
               Показано {wsLogs.length} {wsLogs.length === 1 ? 'запис' : wsLogs.length < 5 ? 'записи' : 'записів'}
+              {logViewMode === 'tree' && <span className="ml-2">• {groupedLogs.length} карток</span>}
+              {(logFromDate || logToDate) && (
+                <span className="ml-2">
+                  • Період: {logFromDate || '...'} — {logToDate || '...'}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Logs List */}
+          {/* Logs Display - List or Tree Mode */}
           {wsLogs.length > 0 ? (
-            <div className="space-y-3">
-              <AnimatePresence mode="popLayout">
-                {wsLogs.map((log, index) => (
-                  <motion.div
-                    key={log.id}
-                    initial={{ opacity: 0, x: -20, height: 0 }}
-                    animate={{ opacity: 1, x: 0, height: 'auto' }}
-                    exit={{ opacity: 0, x: 20, height: 0 }}
-                    transition={{ delay: index * 0.02 }}
-                    className={`glass rounded-xl p-4 border-l-4 ${
-                      log.allowed ? 'border-l-emerald-500' : 'border-l-rose-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full ${
-                          log.allowed ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'
-                        }`}>
-                          {log.allowed ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                          {log.allowed ? t.allowed : t.denied}
-                        </span>
-                        <span className="px-2 py-1 text-xs bg-dark-700/50 rounded-lg text-primary-300">
-                          {log.action}
-                        </span>
-                        <span className="font-mono text-sm">{log.card_uid}</span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-dark-400">
-                        <span>{log.device_id}</span>
-                        <span>{formatDate(log.created_at)}</span>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+            <>
+              {/* List View */}
+              {logViewMode === 'list' && (
+                <div className="space-y-2">
+                  <AnimatePresence mode="popLayout">
+                    {wsLogs.map((log, index) => (
+                      <motion.div
+                        key={log.id}
+                        initial={{ opacity: 0, x: -20, height: 0 }}
+                        animate={{ opacity: 1, x: 0, height: 'auto' }}
+                        exit={{ opacity: 0, x: 20, height: 0 }}
+                        transition={{ delay: index * 0.015 }}
+                        className={`glass rounded-xl p-4 border-l-4 hover:bg-dark-700/30 transition-colors ${
+                          log.allowed ? 'border-l-emerald-500' : 'border-l-rose-500'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          {/* Left side: status, action, card info */}
+                          <div className="flex flex-wrap items-center gap-3">
+                            {/* Result badge */}
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg ${
+                              log.allowed ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'
+                            }`}>
+                              {log.allowed ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                              {log.allowed ? t.allowed : t.denied}
+                            </span>
+
+                            {/* Action badge with icon */}
+                            <ActionBadge action={log.action} />
+
+                            {/* Card UID */}
+                            <span className="font-mono text-sm bg-dark-800/50 px-2 py-0.5 rounded">
+                              {log.card_uid}
+                            </span>
+
+                            {/* Card type */}
+                            {log.card_type && <CardTypeBadge cardType={log.card_type} />}
+
+                            {/* Status info if present */}
+                            {log.status && log.status !== 'success' && log.status !== 'allowed' && (
+                              <span className="text-xs text-dark-400 italic">
+                                {log.status}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Right side: device, timestamp */}
+                          <div className="flex items-center gap-4 text-sm text-dark-400">
+                            {log.device_id && (
+                              <span className="flex items-center gap-1.5">
+                                <Cpu className="w-3.5 h-3.5" />
+                                {log.device_id}
+                              </span>
+                            )}
+                            <span className="text-xs whitespace-nowrap">{formatDate(log.created_at)}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* Tree View - Grouped by Card */}
+              {logViewMode === 'tree' && (
+                <div className="space-y-3">
+                  <AnimatePresence mode="popLayout">
+                    {groupedLogs.map((group, groupIndex) => {
+                      const isExpanded = expandedCards.has(group.card_uid);
+                      const typeConfig = cardTypeConfig[group.card_type] || cardTypeConfig.UNKNOWN;
+                      const scenarios = cardTypeScenarios[group.card_type] || cardTypeScenarios.UNKNOWN;
+                      
+                      return (
+                        <motion.div
+                          key={group.card_uid}
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          transition={{ delay: groupIndex * 0.03 }}
+                          className="glass rounded-xl overflow-hidden"
+                        >
+                          {/* Card Header - Clickable */}
+                          <button
+                            onClick={() => toggleCardExpanded(group.card_uid)}
+                            className={`w-full p-4 flex items-center justify-between hover:bg-dark-700/30 transition-colors ${
+                              group.hasErrors ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'
+                            }`}
+                          >
+                            <div className="flex items-center gap-4">
+                              {/* Expand/Collapse icon */}
+                              {isExpanded ? (
+                                <ChevronDown className="w-5 h-5 text-dark-400" />
+                              ) : (
+                                <ChevronRight className="w-5 h-5 text-dark-400" />
+                              )}
+
+                              {/* Card type icon */}
+                              <div className={`p-2 rounded-lg ${typeConfig.bgColor}`}>
+                                <span className={typeConfig.color}>{typeConfig.icon}</span>
+                              </div>
+
+                              {/* Card info */}
+                              <div className="text-left">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-medium">{group.card_uid}</span>
+                                  <CardTypeBadge cardType={group.card_type} />
+                                </div>
+                                <div className="text-xs text-dark-400 mt-0.5">
+                                  Остання дія: <ActionBadge action={group.lastAction} />
+                                  <span className="ml-2">{formatDate(group.lastTime)}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Stats */}
+                            <div className="flex items-center gap-3">
+                              {/* Success/Fail counts */}
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="flex items-center gap-1 text-emerald-400">
+                                  <CheckCircle className="w-4 h-4" />
+                                  {group.successCount}
+                                </span>
+                                {group.failCount > 0 && (
+                                  <span className="flex items-center gap-1 text-rose-400">
+                                    <XCircle className="w-4 h-4" />
+                                    {group.failCount}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-dark-500 text-sm">{group.logs.length} дій</span>
+                            </div>
+                          </button>
+
+                          {/* Expanded Content - Operation Timeline */}
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="border-t border-dark-700/50"
+                            >
+                              {/* Available scenarios for this card type */}
+                              <div className="px-4 py-2 bg-dark-800/30 border-b border-dark-700/30">
+                                <span className="text-xs text-dark-500">Можливі сценарії для {cardTypeLabels[group.card_type]}:</span>
+                                <div className="flex flex-wrap gap-1.5 mt-1">
+                                  {scenarios.map(scenario => (
+                                    <span
+                                      key={scenario}
+                                      className={`text-xs px-2 py-0.5 rounded ${
+                                        group.logs.some(l => l.action === scenario)
+                                          ? 'bg-primary-500/20 text-primary-300'
+                                          : 'bg-dark-700/50 text-dark-500'
+                                      }`}
+                                    >
+                                      {actionConfig[scenario]?.label || scenario}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Operation Timeline */}
+                              <div className="p-4 pl-8">
+                                <div className="relative">
+                                  {/* Vertical line */}
+                                  <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-dark-700" />
+                                  
+                                  {/* Timeline items */}
+                                  <div className="space-y-3">
+                                    {group.logs.map((log) => (
+                                      <div key={log.id} className="relative pl-8">
+                                        {/* Timeline dot */}
+                                        <div className={`absolute left-0 top-2 w-4 h-4 rounded-full border-2 ${
+                                          log.allowed 
+                                            ? 'bg-emerald-500/20 border-emerald-500' 
+                                            : 'bg-rose-500/20 border-rose-500'
+                                        }`} />
+                                        
+                                        {/* Log entry */}
+                                        <div className={`p-3 rounded-lg bg-dark-800/50 border-l-2 ${
+                                          log.allowed ? 'border-l-emerald-500/50' : 'border-l-rose-500/50'
+                                        }`}>
+                                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <ActionBadge action={log.action} />
+                                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                              log.allowed ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                                            }`}>
+                                              {log.allowed ? t.allowed : t.denied}
+                                            </span>
+                                            {log.status && log.status !== 'success' && (
+                                              <span className="text-xs text-dark-400 italic">{log.status}</span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-3 text-xs text-dark-400">
+                                            {log.device_id && (
+                                              <span className="flex items-center gap-1">
+                                                <Cpu className="w-3 h-3" />
+                                                {log.device_id}
+                                              </span>
+                                            )}
+                                            <span>{formatDate(log.created_at)}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-20">
               <FileText className="w-16 h-16 text-dark-500 mx-auto mb-4" />
-              <p className="text-xl text-dark-300">
+              <p className="text-xl text-dark-300 mb-2">
                 {wsConnected ? 'Очікування логів...' : 'Підключення...'}
+              </p>
+              <p className="text-dark-500">
+                Логи доступу з'являться автоматично
               </p>
             </div>
           )}

@@ -117,6 +117,24 @@ export const devicesApi = {
     const { data } = await api.get('/shared-devices');
     return data || [];
   },
+
+  // Clear chip_id for hardware replacement (SKUD devices only)
+  clearChipId: async (id: string): Promise<{ message: string; old_chip_id: string }> => {
+    const { data } = await api.delete(`/devices/${id}/chip-id`);
+    return data;
+  },
+
+  // Confirm pending chip_id (lock device to hardware)
+  confirmChipId: async (id: string): Promise<{ message: string; chip_id: string }> => {
+    const { data } = await api.post(`/devices/${id}/chip-id/confirm`);
+    return data;
+  },
+
+  // Reject pending chip_id
+  rejectChipId: async (id: string): Promise<{ message: string; rejected_chip_id: string }> => {
+    const { data } = await api.delete(`/devices/${id}/chip-id/pending`);
+    return data;
+  },
 };
 
 // Metrics
@@ -265,19 +283,31 @@ export const skudApi = {
     return data;
   },
 
+  // Regenerate DESFire key (schedule key rotation)
+  regenerateDesfireKey: async (cardId: string): Promise<{ key_version: number; message: string }> => {
+    const { data } = await api.post(`/skud/cards/${cardId}/desfire-key`);
+    return data;
+  },
+
   // Access Logs
   getAccessLogs: async (filters?: {
     action?: string;
     allowed?: boolean;
     card_uid?: string;
+    card_type?: string;
     device_id?: string;
+    from_date?: string;
+    to_date?: string;
     limit?: number;
   }): Promise<AccessLog[]> => {
     const params: Record<string, string> = {};
     if (filters?.action) params.action = filters.action;
     if (filters?.allowed !== undefined) params.allowed = String(filters.allowed);
     if (filters?.card_uid) params.card_uid = filters.card_uid;
+    if (filters?.card_type) params.card_type = filters.card_type;
     if (filters?.device_id) params.device_id = filters.device_id;
+    if (filters?.from_date) params.from_date = filters.from_date;
+    if (filters?.to_date) params.to_date = filters.to_date;
     if (filters?.limit) params.limit = String(filters.limit);
     
     const { data } = await api.get('/skud/logs', { params });

@@ -15,6 +15,8 @@ import {
   Copy,
   RefreshCw,
   Key,
+  Shield,
+  AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { skudApi, devicesApi } from '../services/api';
@@ -118,6 +120,21 @@ export default function CardDetail() {
       toast.success('Токен перегенеровано. Старий токен дійсний ще 24 години.');
     },
     onError: () => toast.error(t.error),
+  });
+
+  const regenerateDesfireKeyMutation = useMutation({
+    mutationFn: () => skudApi.regenerateDesfireKey(id!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['card', id] });
+      toast.success(`Ключ v${data.key_version} заплановано. Прикладіть картку для оновлення.`);
+    },
+    onError: (error: Error & { response?: { data?: { error_code?: string } } }) => {
+      if (error.response?.data?.error_code === 'ALREADY_PENDING') {
+        toast.error('Оновлення ключа вже заплановано. Прикладіть картку.');
+      } else {
+        toast.error(t.error);
+      }
+    },
   });
 
   // Editing state
@@ -389,6 +406,70 @@ export default function CardDetail() {
             Перегенерувати токен
           </button>
         </motion.div>
+
+        {/* DESFire Key Section - only for DESFire cards */}
+        {card.card_type === 'MIFARE_DESFIRE' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.17 }}
+            className="glass rounded-xl p-6"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-lg font-semibold">DESFire криптографічний ключ</h2>
+            </div>
+            
+            <p className="text-sm text-dark-400 mb-4">
+              Унікальний AES-128 ключ, записаний на картку. Перегенерація зробить старий ключ недійсним після оновлення.
+            </p>
+
+            {/* Key Version Info */}
+            <div className="flex items-center gap-4 mb-4 p-3 rounded-lg bg-dark-800/50">
+              <div>
+                <p className="text-xs text-dark-400">Версія ключа</p>
+                <p className="text-lg font-bold text-emerald-400">v{card.key_version || 0}</p>
+              </div>
+              {card.pending_key_update && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm text-amber-300">Очікує оновлення</span>
+                </div>
+              )}
+            </div>
+
+            {/* Pending Update Notice */}
+            {card.pending_key_update && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <p className="text-sm text-amber-300">
+                  ⏳ Новий ключ заплановано. Прикладіть картку до читача для оновлення.
+                </p>
+              </div>
+            )}
+
+            {/* Regenerate DESFire Key Button */}
+            <button
+              onClick={() => {
+                if (confirm('Ви впевнені? Новий ключ буде записаний на картку при наступному прикладанні.')) {
+                  regenerateDesfireKeyMutation.mutate();
+                }
+              }}
+              disabled={regenerateDesfireKeyMutation.isPending || card.pending_key_update}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors border ${
+                card.pending_key_update
+                  ? 'bg-dark-700 text-dark-400 border-dark-600 cursor-not-allowed'
+                  : 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border-emerald-500/30'
+              }`}
+            >
+              {regenerateDesfireKeyMutation.isPending ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Shield className="w-4 h-4" />
+              )}
+              {card.pending_key_update ? 'Оновлення заплановано' : 'Перегенерувати ключ'}
+            </button>
+          </motion.div>
+        )}
 
         {/* Linked Devices Section */}
         <motion.div

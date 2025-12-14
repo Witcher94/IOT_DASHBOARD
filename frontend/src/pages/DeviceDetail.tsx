@@ -20,6 +20,9 @@ import {
   BellOff,
   X,
   Share2,
+  Shield,
+  ShieldOff,
+  AlertTriangle,
 } from 'lucide-react';
 import ShareModal from '../components/ShareModal';
 import {
@@ -120,6 +123,39 @@ export default function DeviceDetail() {
       setVisibleToken(data.token);
       queryClient.invalidateQueries({ queryKey: ['device', id] });
       toast.success(t.tokenRegenerated);
+    },
+  });
+
+  const clearChipIdMutation = useMutation({
+    mutationFn: () => devicesApi.clearChipId(id!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['device', id] });
+      toast.success(`Hardware lock cleared! Old Chip ID: ${data.old_chip_id}`);
+    },
+    onError: () => {
+      toast.error('Failed to clear Chip ID');
+    },
+  });
+
+  const confirmChipIdMutation = useMutation({
+    mutationFn: () => devicesApi.confirmChipId(id!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['device', id] });
+      toast.success(`Hardware confirmed! Chip ID: ${data.chip_id}`);
+    },
+    onError: () => {
+      toast.error('Failed to confirm Chip ID');
+    },
+  });
+
+  const rejectChipIdMutation = useMutation({
+    mutationFn: () => devicesApi.rejectChipId(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device', id] });
+      toast.success('Pending Chip ID rejected');
+    },
+    onError: () => {
+      toast.error('Failed to reject Chip ID');
     },
   });
 
@@ -662,6 +698,106 @@ export default function DeviceDetail() {
                 <RefreshCw className={`w-4 h-4 ${regenerateTokenMutation.isPending ? 'animate-spin' : ''}`} />
                 {t.regenerate}
               </button>
+            </div>
+          )}
+        </motion.div>
+        )}
+
+        {/* Chip ID / Hardware Lock - only for SKUD devices */}
+        {isOwner && device?.device_type === 'skud' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="glass rounded-2xl p-6"
+        >
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-dark-400" />
+            Hardware Lock (Clone Protection)
+          </h2>
+          
+          {/* Case 1: Confirmed chip_id */}
+          {device.chip_id ? (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Device is locked to specific hardware
+              </div>
+              <div className="flex gap-3 items-center">
+                <div className="flex-1">
+                  <span className="text-dark-400 text-sm block mb-1">Chip ID (Confirmed)</span>
+                  <code className="text-sm font-mono bg-dark-700 px-3 py-2 rounded-lg block">
+                    {device.chip_id}
+                  </code>
+                </div>
+                <button
+                  onClick={() => {
+                    if (confirm('Clear hardware lock? This will allow the device to be bound to different hardware. Only do this when replacing the physical ESP32.')) {
+                      clearChipIdMutation.mutate();
+                    }
+                  }}
+                  disabled={clearChipIdMutation.isPending}
+                  className="btn-secondary flex items-center gap-2 text-red-400 hover:bg-red-500/20"
+                >
+                  <ShieldOff className={`w-4 h-4 ${clearChipIdMutation.isPending ? 'animate-spin' : ''}`} />
+                  Clear Lock
+                </button>
+              </div>
+            </div>
+          ) : device.pending_chip_id ? (
+            /* Case 2: Pending chip_id - awaiting confirmation */
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                New hardware detected - please confirm or reject
+              </div>
+              <div className="flex-1">
+                <span className="text-dark-400 text-sm block mb-1">Pending Chip ID</span>
+                <code className="text-sm font-mono bg-dark-700 px-3 py-2 rounded-lg block mb-3">
+                  {device.pending_chip_id}
+                </code>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    if (confirm('Confirm this hardware? The device will be locked to this Chip ID and any other ESP32 will be rejected.')) {
+                      confirmChipIdMutation.mutate();
+                    }
+                  }}
+                  disabled={confirmChipIdMutation.isPending}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  <Check className={`w-4 h-4 ${confirmChipIdMutation.isPending ? 'animate-spin' : ''}`} />
+                  Confirm Hardware
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Reject this hardware? The pending Chip ID will be cleared.')) {
+                      rejectChipIdMutation.mutate();
+                    }
+                  }}
+                  disabled={rejectChipIdMutation.isPending}
+                  className="btn-secondary flex items-center gap-2 text-red-400 hover:bg-red-500/20"
+                >
+                  <X className={`w-4 h-4 ${rejectChipIdMutation.isPending ? 'animate-spin' : ''}`} />
+                  Reject
+                </button>
+              </div>
+              <p className="text-dark-500 text-xs">
+                ⚠️ Only confirm if you trust this is your real ESP32 device, not a clone.
+              </p>
+            </div>
+          ) : (
+            /* Case 3: No chip_id at all */
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Not connected yet - waiting for first connection from ESP32
+              </div>
+              <p className="text-dark-400 text-sm">
+                When the ESP32 makes its first request, its Chip ID will appear here as "pending".
+                You will need to confirm it to lock the device to that hardware.
+              </p>
             </div>
           )}
         </motion.div>

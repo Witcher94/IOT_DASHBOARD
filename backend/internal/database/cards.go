@@ -113,12 +113,16 @@ func (db *DB) CreateCard(ctx context.Context, card *models.Card) error {
 
 func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, error) {
 	query := `
-		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status, created_at, updated_at
+		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status, 
+		       COALESCE(key_version, 0), COALESCE(pending_key_update, FALSE),
+		       created_at, updated_at
 		FROM cards WHERE id = $1
 	`
 	card := &models.Card{}
 	err := db.Pool.QueryRow(ctx, query, id).Scan(
-		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status, &card.CreatedAt, &card.UpdatedAt,
+		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status,
+		&card.KeyVersion, &card.PendingKeyUpdate,
+		&card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -136,12 +140,16 @@ func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, erro
 
 func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, error) {
 	query := `
-		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status, created_at, updated_at
+		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status,
+		       COALESCE(key_version, 0), COALESCE(pending_key_update, FALSE),
+		       created_at, updated_at
 		FROM cards WHERE card_uid = $1
 	`
 	card := &models.Card{}
 	err := db.Pool.QueryRow(ctx, query, cardUID).Scan(
-		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status, &card.CreatedAt, &card.UpdatedAt,
+		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status,
+		&card.KeyVersion, &card.PendingKeyUpdate,
+		&card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -316,10 +324,13 @@ func (db *DB) CreateAccessLog(ctx context.Context, log *models.AccessLog) error 
 
 // AccessLogFilter параметри фільтрації логів
 type AccessLogFilter struct {
-	Action   string // verify, register, card_status, card_delete
+	Action   string // verify, register, card_status, card_delete, desfire_auth, provision, key_rotation, clone_attempt
 	Allowed  *bool  // true/false or nil for all
 	CardUID  string // partial match
 	DeviceID string // partial match
+	CardType string // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
+	FromDate string // ISO date string (YYYY-MM-DD)
+	ToDate   string // ISO date string (YYYY-MM-DD)
 	Limit    int
 }
 
@@ -359,6 +370,24 @@ func (db *DB) GetAccessLogsFiltered(ctx context.Context, filter AccessLogFilter)
 	if filter.DeviceID != "" {
 		query += ` AND device_id ILIKE $` + strconv.Itoa(argNum)
 		args = append(args, "%"+filter.DeviceID+"%")
+		argNum++
+	}
+
+	if filter.CardType != "" {
+		query += ` AND card_type = $` + strconv.Itoa(argNum)
+		args = append(args, filter.CardType)
+		argNum++
+	}
+
+	if filter.FromDate != "" {
+		query += ` AND created_at >= $` + strconv.Itoa(argNum)
+		args = append(args, filter.FromDate)
+		argNum++
+	}
+
+	if filter.ToDate != "" {
+		query += ` AND created_at < ($` + strconv.Itoa(argNum) + `::date + interval '1 day')`
+		args = append(args, filter.ToDate)
 		argNum++
 	}
 
@@ -540,5 +569,41 @@ func (db *DB) CleanupExpiredCardTokens(ctx context.Context) error {
 		DELETE FROM card_tokens WHERE is_current = FALSE AND expires_at < NOW()
 	`)
 	return err
+}
+
+// ==================== DESFire Key Management ====================
+
+// SetPendingKeyUpdate sets the pending_key_update flag and increments key_version
+// Called when user requests key rotation from UI
+func (db *DB) SetPendingKeyUpdate(ctx context.Context, cardID uuid.UUID) (int, error) {
+	var newVersion int
+	err := db.Pool.QueryRow(ctx, `
+		UPDATE cards 
+		SET pending_key_update = TRUE, 
+		    key_version = COALESCE(key_version, 0) + 1,
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING key_version
+	`, cardID).Scan(&newVersion)
+	return newVersion, err
+}
+
+// ClearPendingKeyUpdate clears the flag after successful key update on card
+func (db *DB) ClearPendingKeyUpdate(ctx context.Context, cardID uuid.UUID) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE cards 
+		SET pending_key_update = FALSE, updated_at = NOW()
+		WHERE id = $1
+	`, cardID)
+	return err
+}
+
+// GetCardKeyInfo returns key version and pending status for a card
+func (db *DB) GetCardKeyInfo(ctx context.Context, cardUID string) (keyVersion int, pendingUpdate bool, err error) {
+	err = db.Pool.QueryRow(ctx, `
+		SELECT COALESCE(key_version, 0), COALESCE(pending_key_update, FALSE)
+		FROM cards WHERE card_uid = $1
+	`, cardUID).Scan(&keyVersion, &pendingUpdate)
+	return
 }
 

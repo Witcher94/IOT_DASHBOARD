@@ -47,6 +47,79 @@ func (h *SKUDHandler) getDeviceFromToken(c *gin.Context) (*models.Device, error)
 	return h.db.GetDeviceByToken(c.Request.Context(), token)
 }
 
+// validateAndLockChipID validates the X-Chip-ID header against the stored chip_id
+// For SKUD devices:
+//   - If chip_id is confirmed: must match exactly or CLONE_DETECTED
+//   - If chip_id is not set: save as pending_chip_id for user to confirm in UI
+//
+// Returns: (valid bool, error string) - valid=true if chip_id matches or is pending
+func (h *SKUDHandler) validateAndLockChipID(c *gin.Context, device *models.Device) (bool, string) {
+	// Only validate chip_id for SKUD devices
+	if device.DeviceType != models.DeviceTypeSKUD {
+		return true, ""
+	}
+
+	chipID := c.GetHeader("X-Chip-ID")
+	if chipID == "" {
+		// No chip_id provided - for backwards compatibility, allow but log warning
+		log.Printf("[SKUD] WARNING: Device %s (%s) sent request without X-Chip-ID header", device.Name, device.ID)
+		return true, ""
+	}
+
+	// Case 1: Device has confirmed chip_id - must match exactly
+	if device.ChipID != nil && *device.ChipID != "" {
+		if *device.ChipID != chipID {
+			// CLONE DETECTED!
+			log.Printf("[SKUD] ⚠️ CLONE DETECTED! Device %s expected chip_id=%s, got chip_id=%s",
+				device.Name, *device.ChipID, chipID)
+
+			// Log the clone attempt
+			h.logAccess(c, device.Name, "", "", "clone_attempt", "clone_detected", false)
+
+			// Broadcast alert via WebSocket
+			if h.hub != nil {
+				h.hub.BroadcastAccessLog(map[string]interface{}{
+					"type":          "clone_alert",
+					"device_name":   device.Name,
+					"device_id":     device.ID,
+					"expected_chip": *device.ChipID,
+					"received_chip": chipID,
+					"message":       "Possible device clone detected!",
+				})
+			}
+
+			return false, "CLONE_DETECTED"
+		}
+		// Chip ID matches - all good
+		return true, ""
+	}
+
+	// Case 2: No confirmed chip_id - check/update pending
+	if device.PendingChipID == nil || *device.PendingChipID == "" || *device.PendingChipID != chipID {
+		// New or different chip_id - save as pending
+		if err := h.db.SetPendingChipID(c.Request.Context(), device.ID, chipID); err != nil {
+			log.Printf("[SKUD] Failed to set pending chip_id for device %s: %v", device.Name, err)
+			return false, "Failed to register device hardware"
+		}
+		log.Printf("[SKUD] Device %s: pending chip_id set to %s (awaiting confirmation)", device.Name, chipID)
+		device.PendingChipID = &chipID
+
+		// Broadcast notification for user to confirm
+		if h.hub != nil {
+			h.hub.BroadcastAccessLog(map[string]interface{}{
+				"type":        "chip_id_pending",
+				"device_name": device.Name,
+				"device_id":   device.ID,
+				"chip_id":     chipID,
+				"message":     "New device hardware detected - please confirm in dashboard",
+			})
+		}
+	}
+
+	// Allow request while pending (device can work, but user should confirm)
+	return true, ""
+}
+
 // ==================== Challenge Endpoint (for SKUD devices) ====================
 
 // GetChallenge generates a one-time challenge for SKUD device authentication
@@ -67,6 +140,15 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      "Challenge not required for this device type",
 			"error_code": "NOT_SKUD_DEVICE",
+		})
+		return
+	}
+
+	// Validate and lock chip_id (clone protection)
+	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Device hardware mismatch - possible clone detected",
+			"error_code": errCode,
 		})
 		return
 	}
@@ -185,6 +267,62 @@ func (h *SKUDHandler) RegenerateCardToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"message": "Token regenerated. Old token valid for 24 hours.",
+	})
+}
+
+// RegenerateDesfireKey schedules a DESFire key rotation for a card
+// The new key will be written to the card on next authentication
+// POST /skud/cards/:id/desfire-key
+func (h *SKUDHandler) RegenerateDesfireKey(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid card ID"})
+		return
+	}
+
+	card, err := h.db.GetCardByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Card not found", "error_code": "CARD_NOT_FOUND"})
+		return
+	}
+
+	// Check if card is DESFire type
+	if card.CardType != "MIFARE_DESFIRE" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Key rotation only available for DESFire cards",
+			"error_code": "NOT_DESFIRE",
+		})
+		return
+	}
+
+	// Check if already pending
+	if card.PendingKeyUpdate {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Key update already pending. Present card to reader to complete.",
+			"error_code": "ALREADY_PENDING",
+		})
+		return
+	}
+
+	// Set pending key update (increments key version)
+	newVersion, err := h.db.SetPendingKeyUpdate(c.Request.Context(), id)
+	if err != nil {
+		log.Printf("[SKUD] Failed to set pending key update for card %s: %v", card.CardUID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to schedule key rotation"})
+		return
+	}
+
+	log.Printf("[SKUD] DESFire key rotation scheduled for card %s (v%d -> v%d)", card.CardUID, card.KeyVersion, newVersion)
+	
+	// Broadcast update
+	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), id)
+	if updatedCard != nil {
+		h.hub.BroadcastCardUpdate("updated", updatedCard)
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"key_version": newVersion,
+		"message":     "Key rotation scheduled. Present card to reader to apply new key.",
 	})
 }
 
@@ -421,6 +559,16 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 		return
 	}
 
+	// Validate chip_id (clone protection) - must match before processing any request
+	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Device hardware mismatch - possible clone detected",
+			"error_code": errCode,
+			"access":     false,
+		})
+		return
+	}
+
 	var req models.AccessVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -552,6 +700,15 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 		return
 	}
 
+	// Validate chip_id (clone protection) - must match before processing any request
+	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Device hardware mismatch - possible clone detected",
+			"error_code": errCode,
+		})
+		return
+	}
+
 	var req models.AccessRegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -634,9 +791,12 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 func (h *SKUDHandler) GetAccessLogs(c *gin.Context) {
 	// Parse filter parameters
 	filter := database.AccessLogFilter{
-		Action:   c.Query("action"),   // verify, register, card_status, card_delete
-		CardUID:  c.Query("card_uid"), // partial match
+		Action:   c.Query("action"),    // verify, register, card_status, card_delete, desfire_auth, provision, key_rotation, clone_attempt
+		CardUID:  c.Query("card_uid"),  // partial match
 		DeviceID: c.Query("device_id"), // partial match
+		CardType: c.Query("card_type"), // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
+		FromDate: c.Query("from_date"), // ISO date string (YYYY-MM-DD)
+		ToDate:   c.Query("to_date"),   // ISO date string (YYYY-MM-DD)
 		Limit:    100,
 	}
 

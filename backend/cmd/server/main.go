@@ -127,8 +127,11 @@ func main() {
 				devices.POST("", deviceHandler.CreateDevice)
 				devices.GET("/:id", deviceHandler.GetDevice)
 				devices.DELETE("/:id", deviceHandler.DeleteDevice)
-				devices.POST("/:id/regenerate-token", deviceHandler.RegenerateToken)
-				devices.GET("/:id/metrics", deviceHandler.GetMetrics)
+			devices.POST("/:id/regenerate-token", deviceHandler.RegenerateToken)
+			devices.DELETE("/:id/chip-id", deviceHandler.ClearChipID)        // Clear confirmed chip_id
+			devices.POST("/:id/chip-id/confirm", deviceHandler.ConfirmChipID) // Confirm pending chip_id
+			devices.DELETE("/:id/chip-id/pending", deviceHandler.RejectChipID) // Reject pending chip_id
+			devices.GET("/:id/metrics", deviceHandler.GetMetrics)
 				devices.POST("/:id/commands", deviceHandler.CreateCommand)
 				devices.GET("/:id/commands", deviceHandler.GetCommands)
 				devices.DELETE("/:id/commands/:commandId", deviceHandler.CancelCommand)
@@ -195,7 +198,8 @@ func main() {
 			skud.PUT("/cards/:id", skudHandler.UpdateCard)
 			skud.PATCH("/cards/:id/status", skudHandler.UpdateCardStatus)
 			skud.DELETE("/cards/:id", skudHandler.DeleteCard)
-			skud.POST("/cards/:id/token", skudHandler.RegenerateCardToken) // Regenerate card token
+			skud.POST("/cards/:id/token", skudHandler.RegenerateCardToken)         // Regenerate card token
+			skud.POST("/cards/:id/desfire-key", skudHandler.RegenerateDesfireKey) // Rotate DESFire key
 
 			// Card-Device links
 			skud.POST("/cards/:id/devices/:device_id", skudHandler.LinkCardToDevice)

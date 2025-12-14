@@ -138,6 +138,9 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS name VARCHAR(255)`,
 		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS card_type VARCHAR(32)`,
+		// DESFire key versioning for rotation
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS key_version INTEGER DEFAULT 0`,
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS pending_key_update BOOLEAN DEFAULT FALSE`,
 		// Card tokens for authentication (supports token rotation)
 		`CREATE TABLE IF NOT EXISTS card_tokens (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -191,6 +194,8 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS name VARCHAR(255) DEFAULT ''`,
 		// Card type field (MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.)
 		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS card_type VARCHAR(64) DEFAULT ''`,
+		// Pending chip_id for device clone protection (awaiting user confirmation)
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS pending_chip_id VARCHAR(64)`,
 	}
 
 	for _, migration := range migrations {

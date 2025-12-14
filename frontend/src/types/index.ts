@@ -16,7 +16,8 @@ export interface Device {
   device_type?: string; // simple_device, gateway, mesh_node, skud
   gateway_id?: string; // For mesh nodes
   mesh_node_id?: number; // painlessMesh node ID
-  chip_id?: string;
+  chip_id?: string;           // Confirmed/locked chip_id
+  pending_chip_id?: string;   // Awaiting user confirmation
   mac?: string;
   platform?: string;
   firmware?: string;
@@ -125,6 +126,8 @@ export interface Card {
   name: string;
   status: CardStatus;
   token?: string; // Authentication token (only shown on detail page)
+  key_version?: number; // DESFire: current key version
+  pending_key_update?: boolean; // DESFire: key update scheduled
   devices?: DeviceBrief[];
   created_at: string;
   updated_at: string;
@@ -149,15 +152,46 @@ export interface AccessDevice {
   created_at: string;
 }
 
+// Log action types
+export type AccessLogAction = 
+  | 'verify' 
+  | 'register' 
+  | 'card_status' 
+  | 'card_delete' 
+  | 'desfire_auth' 
+  | 'provision' 
+  | 'key_rotation'
+  | 'clone_attempt';
+
+// Card types for NFC/RFID cards
+export type CardType = 
+  | 'MIFARE_CLASSIC_1K' 
+  | 'MIFARE_CLASSIC_4K' 
+  | 'MIFARE_DESFIRE' 
+  | 'MIFARE_ULTRALIGHT' 
+  | 'UNKNOWN';
+
 export interface AccessLog {
   id: string;
   device_id: string;
   card_uid: string;
-  card_type: string;
-  action: string;
+  card_type: CardType | string;
+  action: AccessLogAction | string;
   status: string;
   allowed: boolean;
   created_at: string;
+}
+
+// Access log filters for API
+export interface AccessLogFilters {
+  action?: AccessLogAction | string;
+  allowed?: boolean;
+  card_uid?: string;
+  card_type?: CardType | string;
+  device_id?: string;
+  from_date?: string;
+  to_date?: string;
+  limit?: number;
 }
 
 export interface CreateAccessDeviceRequest {

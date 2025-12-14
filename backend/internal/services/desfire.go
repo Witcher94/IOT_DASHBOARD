@@ -22,6 +22,7 @@ const (
 	DesfireStateSelectApp  = "select_app"
 	DesfireStateAuth1      = "auth1"
 	DesfireStateAuth2      = "auth2"
+	DesfireStateKeyUpdate  = "key_update" // After auth, updating key on card
 	DesfireStateComplete   = "complete"
 	DesfireStateFailed     = "failed"
 	
@@ -64,6 +65,11 @@ type DesfireSession struct {
 	RndB         []byte    `json:"-"`  // Card's random
 	IV           []byte    `json:"-"`  // Current IV for CBC
 	SessionKey   []byte    `json:"-"`  // Session key after auth
+	
+	// Key versioning for rotation
+	KeyVersion       int    `json:"-"` // Current key version on card
+	NewKeyVersion    int    `json:"-"` // New version to write (if pending update)
+	PendingKeyUpdate bool   `json:"-"` // Need to update key on card
 	
 	// Provisioning mode
 	IsProvisioning bool     `json:"is_provisioning"`
@@ -132,10 +138,16 @@ func NewDesfireService(masterKeyHex string) (*DesfireService, error) {
 
 // DeriveKeyForCard derives a unique AES-128 key for a specific card UID
 // Uses HMAC-SHA256 then truncates to 16 bytes
+// keyVersion 0 = initial key, keyVersion 1+ = rotated keys
 func (s *DesfireService) DeriveKeyForCard(cardUID string) []byte {
-	// Key = HMAC-SHA256(MasterKey, "SKUD_DESFIRE_V1" + CardUID)[:16]
+	return s.DeriveKeyForCardVersion(cardUID, 0)
+}
+
+// DeriveKeyForCardVersion derives key for specific version
+func (s *DesfireService) DeriveKeyForCardVersion(cardUID string, keyVersion int) []byte {
+	// Key = HMAC-SHA256(MasterKey, "SKUD_DESFIRE_V" + version + CardUID)[:16]
 	h := hmac.New(sha256.New, s.masterKey)
-	h.Write([]byte("SKUD_DESFIRE_V1"))
+	h.Write([]byte(fmt.Sprintf("SKUD_DESFIRE_V%d", keyVersion)))
 	h.Write([]byte(cardUID))
 	fullHash := h.Sum(nil)
 	
@@ -148,24 +160,43 @@ func (s *DesfireService) DeriveKeyForCard(cardUID string) []byte {
 
 // CreateSession creates a new authentication session
 func (s *DesfireService) CreateSession(cardUID string, deviceID uuid.UUID, isProvisioning bool) *DesfireSession {
+	return s.CreateSessionWithKeyInfo(cardUID, deviceID, isProvisioning, 0, false)
+}
+
+// CreateSessionWithKeyInfo creates session with key version info for rotation support
+func (s *DesfireService) CreateSessionWithKeyInfo(cardUID string, deviceID uuid.UUID, isProvisioning bool, keyVersion int, pendingKeyUpdate bool) *DesfireSession {
 	sessionID := uuid.New().String()
 	
 	session := &DesfireSession{
-		ID:             sessionID,
-		CardUID:        cardUID,
-		DeviceID:       deviceID,
-		State:          DesfireStateStarted,
-		DerivedKey:     s.DeriveKeyForCard(cardUID),
-		IsProvisioning: isProvisioning,
-		CreatedAt:      time.Now(),
-		ExpiresAt:      time.Now().Add(30 * time.Second), // 30 second timeout
+		ID:               sessionID,
+		CardUID:          cardUID,
+		DeviceID:         deviceID,
+		State:            DesfireStateStarted,
+		DerivedKey:       s.DeriveKeyForCardVersion(cardUID, keyVersion),
+		KeyVersion:       keyVersion,
+		PendingKeyUpdate: pendingKeyUpdate,
+		IsProvisioning:   isProvisioning,
+		CreatedAt:        time.Now(),
+		ExpiresAt:        time.Now().Add(30 * time.Second), // 30 second timeout
+	}
+	
+	// If pending key update, also calculate new key version
+	if pendingKeyUpdate {
+		session.NewKeyVersion = keyVersion // keyVersion already incremented in DB
+		// Auth with OLD key (version - 1), then update to new
+		oldVersion := keyVersion - 1
+		if oldVersion < 0 {
+			oldVersion = 0
+		}
+		session.DerivedKey = s.DeriveKeyForCardVersion(cardUID, oldVersion)
 	}
 	
 	s.sessionMutex.Lock()
 	s.sessions[sessionID] = session
 	s.sessionMutex.Unlock()
 	
-	log.Printf("[DESFire] Session created: %s for card %s (provisioning: %v)", sessionID, cardUID, isProvisioning)
+	log.Printf("[DESFire] Session created: %s for card %s (provisioning: %v, keyVer: %d, pendingUpdate: %v)", 
+		sessionID, cardUID, isProvisioning, keyVersion, pendingKeyUpdate)
 	
 	return session
 }
@@ -707,6 +738,54 @@ func (s *DesfireService) buildChangeKeyCommand(session *DesfireSession) (*Desfir
 	cmd = append(cmd, encrypted...)
 	
 	log.Printf("[DESFire Prov] ChangeKey command built, writing new key...")
+	
+	return &DesfireCommand{
+		Type: DesfireCmdChangeKey,
+		Data: hex.EncodeToString(cmd),
+	}, nil
+}
+
+// BuildChangeKeyCommandForSession builds ChangeKey command for key rotation (after auth)
+// Uses session key from successful auth, and session.DerivedKey as the new key
+func (s *DesfireService) BuildChangeKeyCommandForSession(session *DesfireSession) (*DesfireCommand, error) {
+	if session.SessionKey == nil {
+		return nil, errors.New("no session key - auth not completed")
+	}
+	
+	newKey := session.DerivedKey
+	if len(newKey) != 16 {
+		return nil, errors.New("invalid new key length")
+	}
+	
+	// ChangeKey command for AES (changing own key):
+	// 0xC4 + KeyNo + Encrypted(NewKey + CRC32(0xC4 || KeyNo || NewKey) + Padding)
+	keyNo := byte(0x00)
+	crcData := append([]byte{0xC4, keyNo}, newKey...)
+	crc := calculateDesfireCRC32(crcData)
+	
+	// Plaintext: NewKey(16) + CRC(4) + Padding(12) = 32 bytes
+	plaintext := make([]byte, 32)
+	copy(plaintext[0:16], newKey)
+	plaintext[16] = byte(crc & 0xFF)
+	plaintext[17] = byte((crc >> 8) & 0xFF)
+	plaintext[18] = byte((crc >> 16) & 0xFF)
+	plaintext[19] = byte((crc >> 24) & 0xFF)
+	
+	// Encrypt with session key
+	block, err := aes.NewCipher(session.SessionKey)
+	if err != nil {
+		return nil, err
+	}
+	
+	iv := make([]byte, 16)
+	mode := cipher.NewCBCEncrypter(block, iv)
+	encrypted := make([]byte, 32)
+	mode.CryptBlocks(encrypted, plaintext)
+	
+	cmd := []byte{0xC4, keyNo}
+	cmd = append(cmd, encrypted...)
+	
+	log.Printf("[DESFire] ChangeKey command built for key rotation to v%d", session.NewKeyVersion)
 	
 	return &DesfireCommand{
 		Type: DesfireCmdChangeKey,

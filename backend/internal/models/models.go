@@ -35,9 +35,10 @@ type Device struct {
 	Token       string     `json:"-"`                      // Hidden by default, use DeviceWithToken for responses that need it
 	DeviceType  string     `json:"device_type"`            // simple_device, gateway, mesh_node
 	GatewayID   *uuid.UUID `json:"gateway_id,omitempty"`   // Parent gateway for mesh_node
-	MeshNodeID  *uint32    `json:"mesh_node_id,omitempty"` // painlessMesh node ID
-	ChipID      *string    `json:"chip_id,omitempty"`
-	MAC         *string    `json:"mac,omitempty"`
+	MeshNodeID     *uint32    `json:"mesh_node_id,omitempty"` // painlessMesh node ID
+	ChipID         *string    `json:"chip_id,omitempty"`         // Confirmed/locked chip_id
+	PendingChipID  *string    `json:"pending_chip_id,omitempty"` // Awaiting user confirmation
+	MAC            *string    `json:"mac,omitempty"`
 	Platform    *string    `json:"platform,omitempty"`
 	Firmware    *string    `json:"firmware,omitempty"`
 	IsOnline    bool       `json:"is_online"`
@@ -259,15 +260,17 @@ const (
 
 // Card представляє NFC/RFID картку доступу
 type Card struct {
-	ID        uuid.UUID     `json:"id"`
-	CardUID   string        `json:"card_uid"`
-	CardType  string        `json:"card_type"` // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
-	Name      string        `json:"name"`      // Custom display name for the card
-	Status    string        `json:"status"`    // pending, active, disabled
-	Token     string        `json:"token,omitempty"` // Current auth token (only shown to owner)
-	Devices   []DeviceBrief `json:"devices,omitempty"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	CardUID          string        `json:"card_uid"`
+	CardType         string        `json:"card_type"` // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
+	Name             string        `json:"name"`      // Custom display name for the card
+	Status           string        `json:"status"`    // pending, active, disabled
+	Token            string        `json:"token,omitempty"` // Current auth token (only shown to owner)
+	KeyVersion       int           `json:"key_version"`        // DESFire: key version for rotation (0 = initial)
+	PendingKeyUpdate bool          `json:"pending_key_update"` // DESFire: needs key update on next auth
+	Devices          []DeviceBrief `json:"devices,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // CardToken represents an authentication token for a card
@@ -353,7 +356,7 @@ type AccessLog struct {
 	DeviceID  string    `json:"device_id"`
 	CardUID   string    `json:"card_uid"`
 	CardType  string    `json:"card_type"`
-	Action    string    `json:"action"` // verify, register, card_status, card_delete, desfire_auth
+	Action    string    `json:"action"` // verify, register, card_status, card_delete, desfire_auth, provision, key_rotation, clone_attempt
 	Status    string    `json:"status"`
 	Allowed   bool      `json:"allowed"`
 	CreatedAt time.Time `json:"created_at"`

@@ -36,6 +36,86 @@ func (h *DesfireHandler) getDeviceFromToken(c *gin.Context) (*models.Device, err
 	return h.db.GetDeviceByToken(c.Request.Context(), token)
 }
 
+// validateAndLockChipID validates the X-Chip-ID header against the stored chip_id
+// For SKUD devices:
+//   - If chip_id is confirmed: must match exactly or CLONE_DETECTED
+//   - If chip_id is not set: save as pending_chip_id for user to confirm in UI
+//
+// Returns: (valid bool, error string) - valid=true if chip_id matches or is pending
+func (h *DesfireHandler) validateAndLockChipID(c *gin.Context, device *models.Device) (bool, string) {
+	// Only validate chip_id for SKUD devices
+	if device.DeviceType != models.DeviceTypeSKUD {
+		return true, ""
+	}
+
+	chipID := c.GetHeader("X-Chip-ID")
+	if chipID == "" {
+		// No chip_id provided - for backwards compatibility, allow but log warning
+		log.Printf("[DESFire] WARNING: Device %s (%s) sent request without X-Chip-ID header", device.Name, device.ID)
+		return true, ""
+	}
+
+	// Case 1: Device has confirmed chip_id - must match exactly
+	if device.ChipID != nil && *device.ChipID != "" {
+		if *device.ChipID != chipID {
+			// CLONE DETECTED!
+			log.Printf("[DESFire] ⚠️ CLONE DETECTED! Device %s expected chip_id=%s, got chip_id=%s",
+				device.Name, *device.ChipID, chipID)
+
+			// Log the clone attempt
+			h.db.CreateAccessLog(c.Request.Context(), &models.AccessLog{
+				DeviceID: device.Name,
+				CardUID:  "",
+				CardType: "DEVICE_CLONE",
+				Action:   "clone_attempt",
+				Status:   "clone_detected",
+				Allowed:  false,
+			})
+
+			// Broadcast alert via WebSocket
+			if h.hub != nil {
+				h.hub.BroadcastAccessLog(map[string]interface{}{
+					"type":          "clone_alert",
+					"device_name":   device.Name,
+					"device_id":     device.ID,
+					"expected_chip": *device.ChipID,
+					"received_chip": chipID,
+					"message":       "Possible device clone detected!",
+				})
+			}
+
+			return false, "CLONE_DETECTED"
+		}
+		// Chip ID matches - all good
+		return true, ""
+	}
+
+	// Case 2: No confirmed chip_id - check/update pending
+	if device.PendingChipID == nil || *device.PendingChipID == "" || *device.PendingChipID != chipID {
+		// New or different chip_id - save as pending
+		if err := h.db.SetPendingChipID(c.Request.Context(), device.ID, chipID); err != nil {
+			log.Printf("[DESFire] Failed to set pending chip_id for device %s: %v", device.Name, err)
+			return false, "Failed to register device hardware"
+		}
+		log.Printf("[DESFire] Device %s: pending chip_id set to %s (awaiting confirmation)", device.Name, chipID)
+		device.PendingChipID = &chipID
+
+		// Broadcast notification for user to confirm
+		if h.hub != nil {
+			h.hub.BroadcastAccessLog(map[string]interface{}{
+				"type":        "chip_id_pending",
+				"device_name": device.Name,
+				"device_id":   device.ID,
+				"chip_id":     chipID,
+				"message":     "New device hardware detected - please confirm in dashboard",
+			})
+		}
+	}
+
+	// Allow request while pending (device can work, but user should confirm)
+	return true, ""
+}
+
 // DesfireStart handles POST /access/desfire/start
 // Begins a new DESFire authentication session
 func (h *DesfireHandler) DesfireStart(c *gin.Context) {
@@ -45,6 +125,15 @@ func (h *DesfireHandler) DesfireStart(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":      "Invalid or missing device token",
 			"error_code": "INVALID_DEVICE_TOKEN",
+		})
+		return
+	}
+
+	// Validate chip_id (clone protection) - must match before processing any request
+	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Device hardware mismatch - possible clone detected",
+			"error_code": errCode,
 		})
 		return
 	}
@@ -137,7 +226,22 @@ func (h *DesfireHandler) DesfireStart(c *gin.Context) {
 	}
 
 	// Card is active and (linked to this device OR not linked anywhere) - start authentication
-	session := h.desfire.CreateSession(cardUID, device.ID, false)
+	// Check if key update is pending
+	session := h.desfire.CreateSessionWithKeyInfo(cardUID, device.ID, false, card.KeyVersion, card.PendingKeyUpdate)
+	
+	if card.PendingKeyUpdate {
+		log.Printf("[DESFire] Card %s has pending key update (v%d -> v%d)", cardUID, card.KeyVersion-1, card.KeyVersion)
+		session.State = services.DesfireStateSelectApp
+		// Will auth with old key first, then update to new key
+		c.JSON(http.StatusOK, services.DesfireStartResponse{
+			SessionID: session.ID,
+			Status:    "key_update",
+			Command:   h.desfire.BuildSelectAppCommand(),
+			TimeoutMs: 30000, // 30 seconds for key update
+		})
+		return
+	}
+	
 	session.State = services.DesfireStateSelectApp
 
 	c.JSON(http.StatusOK, services.DesfireStartResponse{
@@ -157,6 +261,15 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":      "Invalid or missing device token",
 			"error_code": "INVALID_DEVICE_TOKEN",
+		})
+		return
+	}
+
+	// Validate chip_id (clone protection) - must match before processing any request
+	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Device hardware mismatch - possible clone detected",
+			"error_code": errCode,
 		})
 		return
 	}
@@ -357,9 +470,8 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 			return
 		}
 
-		h.desfire.DeleteSession(session.ID)
-
 		if !verified {
+			h.desfire.DeleteSession(session.ID)
 			// CLONE DETECTED!
 			log.Printf("[DESFire] CLONE DETECTED for card %s!", session.CardUID)
 			
@@ -388,6 +500,37 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 			return
 		}
 
+		// Crypto verified - check if we need to update key on card
+		if session.PendingKeyUpdate {
+			log.Printf("[DESFire] Card %s authenticated, now updating key to v%d", session.CardUID, session.NewKeyVersion)
+			
+			// Calculate new key and build ChangeKey command
+			newKey := h.desfire.DeriveKeyForCardVersion(session.CardUID, session.NewKeyVersion)
+			session.DerivedKey = newKey // Set new key for change key command
+			
+			cmd, err := h.desfire.BuildChangeKeyCommandForSession(session)
+			if err != nil {
+				log.Printf("[DESFire] Failed to build ChangeKey command: %v", err)
+				h.desfire.DeleteSession(session.ID)
+				c.JSON(http.StatusOK, services.DesfireStepResponse{
+					Status:  "error",
+					Reason:  "key_update_error",
+					Message: err.Error(),
+				})
+				return
+			}
+			
+			session.State = services.DesfireStateKeyUpdate
+			c.JSON(http.StatusOK, services.DesfireStepResponse{
+				Status:  "continue",
+				Command: cmd,
+				Message: "Updating key on card...",
+			})
+			return
+		}
+		
+		h.desfire.DeleteSession(session.ID)
+		
 		// Crypto verified - now check card status and device linking
 		log.Printf("[DESFire] Card %s crypto verified, checking status...", session.CardUID)
 
@@ -497,6 +640,56 @@ func (h *DesfireHandler) DesfireStep(c *gin.Context) {
 			Status:   "granted",
 			CardName: cardName,
 			Message:  "Access granted",
+		})
+		return
+
+	case services.DesfireStateKeyUpdate:
+		// Response from ChangeKey command
+		if len(response) >= 1 && response[0] == 0x00 {
+			// Key updated successfully!
+			log.Printf("[DESFire] KEY ROTATION COMPLETE for card %s (now v%d)", session.CardUID, session.NewKeyVersion)
+			
+			// Clear pending flag in database
+			card, _ := h.db.GetCardByUID(c.Request.Context(), session.CardUID)
+			if card != nil {
+				h.db.ClearPendingKeyUpdate(c.Request.Context(), card.ID)
+			}
+			
+			h.desfire.DeleteSession(session.ID)
+			
+			// Log the key update
+			h.db.CreateAccessLog(c.Request.Context(), &models.AccessLog{
+				DeviceID: device.Name,
+				CardUID:  session.CardUID,
+				CardType: "MIFARE_DESFIRE",
+				Action:   "key_rotation",
+				Status:   "success",
+				Allowed:  true,
+			})
+			
+			cardName := ""
+			if card != nil {
+				cardName = card.Name
+				if cardName == "" {
+					cardName = card.CardUID
+				}
+			}
+			
+			c.JSON(http.StatusOK, services.DesfireStepResponse{
+				Status:   "granted",
+				CardName: cardName,
+				Message:  "Key updated, access granted",
+			})
+			return
+		}
+		
+		// Key update failed
+		log.Printf("[DESFire] KEY ROTATION FAILED for card %s: %s", session.CardUID, responseHex)
+		h.desfire.DeleteSession(session.ID)
+		c.JSON(http.StatusOK, services.DesfireStepResponse{
+			Status:  "error",
+			Reason:  "key_update_failed",
+			Message: "Failed to update key on card",
 		})
 		return
 

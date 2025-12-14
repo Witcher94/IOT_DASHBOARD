@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ func (db *DB) CreateDevice(ctx context.Context, device *models.Device) error {
 
 func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, error) {
 	query := `
-		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+		SELECT id, user_id, name, token, chip_id, pending_chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
 			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
@@ -36,7 +37,7 @@ func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, 
 	device := &models.Device{}
 	err := db.Pool.QueryRow(ctx, query, id).Scan(
 		&device.ID, &device.UserID, &device.Name, &device.Token,
-		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+		&device.ChipID, &device.PendingChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 		&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
@@ -50,7 +51,7 @@ func (db *DB) GetDeviceByID(ctx context.Context, id uuid.UUID) (*models.Device, 
 
 func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Device, error) {
 	query := `
-		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+		SELECT id, user_id, name, token, chip_id, pending_chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
 			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
@@ -60,7 +61,7 @@ func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Devic
 	device := &models.Device{}
 	err := db.Pool.QueryRow(ctx, query, token).Scan(
 		&device.ID, &device.UserID, &device.Name, &device.Token,
-		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+		&device.ChipID, &device.PendingChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 		&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
@@ -74,7 +75,7 @@ func (db *DB) GetDeviceByToken(ctx context.Context, token string) (*models.Devic
 
 func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]models.Device, error) {
 	query := `
-		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+		SELECT id, user_id, name, token, chip_id, pending_chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
 			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
@@ -92,7 +93,7 @@ func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]model
 		var device models.Device
 		if err := rows.Scan(
 			&device.ID, &device.UserID, &device.Name, &device.Token,
-			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+			&device.ChipID, &device.PendingChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 			&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
@@ -107,7 +108,7 @@ func (db *DB) GetDevicesByUserID(ctx context.Context, userID uuid.UUID) ([]model
 
 func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 	query := `
-		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+		SELECT id, user_id, name, token, chip_id, pending_chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
 			   COALESCE(device_type, 'simple_device'), gateway_id, mesh_node_id,
@@ -125,7 +126,7 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 		var device models.Device
 		if err := rows.Scan(
 			&device.ID, &device.UserID, &device.Name, &device.Token,
-			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+			&device.ChipID, &device.PendingChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 			&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
@@ -141,7 +142,7 @@ func (db *DB) GetAllDevices(ctx context.Context) ([]models.Device, error) {
 // GetMeshNodesByGatewayID returns all mesh nodes belonging to a gateway
 func (db *DB) GetMeshNodesByGatewayID(ctx context.Context, gatewayID uuid.UUID) ([]models.Device, error) {
 	query := `
-		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+		SELECT id, user_id, name, token, chip_id, pending_chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
 			   COALESCE(device_type, 'mesh_node'), gateway_id, mesh_node_id,
@@ -159,7 +160,7 @@ func (db *DB) GetMeshNodesByGatewayID(ctx context.Context, gatewayID uuid.UUID) 
 		var device models.Device
 		if err := rows.Scan(
 			&device.ID, &device.UserID, &device.Name, &device.Token,
-			&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+			&device.ChipID, &device.PendingChipID, &device.MAC, &device.Platform, &device.Firmware,
 			&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 			&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 			&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
@@ -176,7 +177,7 @@ func (db *DB) GetMeshNodesByGatewayID(ctx context.Context, gatewayID uuid.UUID) 
 func (db *DB) GetOrCreateMeshNode(ctx context.Context, gatewayID uuid.UUID, meshNodeID uint32, nodeName string) (*models.Device, error) {
 	// First try to find existing
 	query := `
-		SELECT id, user_id, name, token, chip_id, mac, platform, firmware,
+		SELECT id, user_id, name, token, chip_id, pending_chip_id, mac, platform, firmware,
 			   is_online, last_seen, dht_enabled, mesh_enabled,
 			   COALESCE(alerts_enabled, true), alert_temp_min, alert_temp_max, alert_humidity_max,
 			   COALESCE(device_type, 'mesh_node'), gateway_id, mesh_node_id,
@@ -186,7 +187,7 @@ func (db *DB) GetOrCreateMeshNode(ctx context.Context, gatewayID uuid.UUID, mesh
 	device := &models.Device{}
 	err := db.Pool.QueryRow(ctx, query, gatewayID, meshNodeID).Scan(
 		&device.ID, &device.UserID, &device.Name, &device.Token,
-		&device.ChipID, &device.MAC, &device.Platform, &device.Firmware,
+		&device.ChipID, &device.PendingChipID, &device.MAC, &device.Platform, &device.Firmware,
 		&device.IsOnline, &device.LastSeen, &device.DHTEnabled, &device.MeshEnabled,
 		&device.AlertsEnabled, &device.AlertTempMin, &device.AlertTempMax, &device.AlertHumidityMax,
 		&device.DeviceType, &device.GatewayID, &device.MeshNodeID,
@@ -309,5 +310,48 @@ func (db *DB) MarkOfflineDevices(ctx context.Context, timeout time.Duration) err
 func (db *DB) UpdateDeviceType(ctx context.Context, deviceID uuid.UUID, deviceType string) error {
 	query := `UPDATE devices SET device_type = $1 WHERE id = $2`
 	_, err := db.Pool.Exec(ctx, query, deviceType, deviceID)
+	return err
+}
+
+// SetDeviceChipID sets the chip_id for a device (hardware lock for clone protection)
+// This is typically called once on first connection from the device
+func (db *DB) SetDeviceChipID(ctx context.Context, deviceID uuid.UUID, chipID string) error {
+	query := `UPDATE devices SET chip_id = $2, updated_at = $3 WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, deviceID, chipID, time.Now())
+	return err
+}
+
+// ClearDeviceChipID clears the chip_id for a device (allows re-binding to new hardware)
+// This should only be called by admins when replacing hardware
+func (db *DB) ClearDeviceChipID(ctx context.Context, deviceID uuid.UUID) error {
+	query := `UPDATE devices SET chip_id = NULL, pending_chip_id = NULL, updated_at = $2 WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, deviceID, time.Now())
+	return err
+}
+
+// SetPendingChipID sets the pending_chip_id for a device (awaiting user confirmation)
+func (db *DB) SetPendingChipID(ctx context.Context, deviceID uuid.UUID, chipID string) error {
+	query := `UPDATE devices SET pending_chip_id = $2, updated_at = $3 WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, deviceID, chipID, time.Now())
+	return err
+}
+
+// ConfirmChipID moves pending_chip_id to chip_id (user confirmed the hardware)
+func (db *DB) ConfirmChipID(ctx context.Context, deviceID uuid.UUID) error {
+	query := `UPDATE devices SET chip_id = pending_chip_id, pending_chip_id = NULL, updated_at = $2 WHERE id = $1 AND pending_chip_id IS NOT NULL`
+	result, err := db.Pool.Exec(ctx, query, deviceID, time.Now())
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("no pending chip_id to confirm")
+	}
+	return nil
+}
+
+// RejectPendingChipID clears the pending_chip_id (user rejected the hardware)
+func (db *DB) RejectPendingChipID(ctx context.Context, deviceID uuid.UUID) error {
+	query := `UPDATE devices SET pending_chip_id = NULL, updated_at = $2 WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, deviceID, time.Now())
 	return err
 }
