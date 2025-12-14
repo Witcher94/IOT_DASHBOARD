@@ -173,7 +173,23 @@ export const gatewayApi = {
     const { data } = await api.post(`/gateways/${gatewayId}/nodes/${nodeId}/commands`, command);
     return data;
   },
+
+  sendCommand: async (deviceId: string, command: CreateCommandRequest): Promise<Command> => {
+    const { data } = await api.post(`/devices/${deviceId}/commands`, command);
+    return data;
+  },
+
+  getLogs: async (gatewayId: string, type: 'serial' | 'gateway'): Promise<LogEntry[]> => {
+    const { data } = await api.get(`/gateways/${gatewayId}/logs/${type}`);
+    return data;
+  },
 };
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
 
 export default api;
 

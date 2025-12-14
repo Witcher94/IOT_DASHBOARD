@@ -93,6 +93,27 @@ type Gateway struct {
 	running    bool
 	stats      Stats
 	logFile    *os.File
+	// Logs buffers
+	serialLogs  []LogEntry
+	gatewayLogs []LogEntry
+	logsMu      sync.RWMutex
+}
+
+// LogEntry for storing logs
+type LogEntry struct {
+	Timestamp time.Time `json:"timestamp"`
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
+}
+
+// Command from backend
+type BackendCommand struct {
+	ID        string `json:"id"`
+	DeviceID  string `json:"device_id"`
+	Command   string `json:"command"`
+	Params    string `json:"params"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
 }
 
 // Stats tracks gateway statistics
@@ -346,6 +367,7 @@ func (g *Gateway) Run() error {
 	// Start workers
 	go g.batchSender()
 	go g.nodeTimeoutChecker()
+	go g.commandPoller()
 	go g.startWebServer()
 
 	// Serial reader (blocking)
@@ -435,6 +457,9 @@ func (g *Gateway) readSerial() {
 }
 
 func (g *Gateway) processMessage(line string) {
+	// Log raw serial data
+	g.addSerialLog("data", strings.TrimSpace(line))
+
 	var msg MeshMessage
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
 		return
@@ -832,6 +857,8 @@ func (g *Gateway) startWebServer() {
 	mux.HandleFunc("/api/command", g.handleAPICommand)
 	mux.HandleFunc("/api/broadcast", g.handleAPIBroadcast)
 	mux.HandleFunc("/api/settings", g.handleAPISettings)
+	mux.HandleFunc("/api/logs/serial", g.handleAPISerialLogs)
+	mux.HandleFunc("/api/logs/gateway", g.handleAPIGatewayLogs)
 
 	addr := fmt.Sprintf(":%d", g.config.WebPort)
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -1285,4 +1312,208 @@ func (g *Gateway) handleAPISettings(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✅ Token updated via web UI")
 
 	json.NewEncoder(w).Encode(map[string]string{"message": "Token saved successfully"})
+}
+
+// ============== LOGS ==============
+
+const MAX_LOG_ENTRIES = 500
+
+func (g *Gateway) addSerialLog(level, message string) {
+	g.logsMu.Lock()
+	defer g.logsMu.Unlock()
+	
+	entry := LogEntry{
+		Timestamp: time.Now(),
+		Level:     level,
+		Message:   message,
+	}
+	g.serialLogs = append(g.serialLogs, entry)
+	if len(g.serialLogs) > MAX_LOG_ENTRIES {
+		g.serialLogs = g.serialLogs[len(g.serialLogs)-MAX_LOG_ENTRIES:]
+	}
+}
+
+func (g *Gateway) addGatewayLog(level, message string) {
+	g.logsMu.Lock()
+	defer g.logsMu.Unlock()
+	
+	entry := LogEntry{
+		Timestamp: time.Now(),
+		Level:     level,
+		Message:   message,
+	}
+	g.gatewayLogs = append(g.gatewayLogs, entry)
+	if len(g.gatewayLogs) > MAX_LOG_ENTRIES {
+		g.gatewayLogs = g.gatewayLogs[len(g.gatewayLogs)-MAX_LOG_ENTRIES:]
+	}
+}
+
+func (g *Gateway) handleAPISerialLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	
+	g.logsMu.RLock()
+	logs := make([]LogEntry, len(g.serialLogs))
+	copy(logs, g.serialLogs)
+	g.logsMu.RUnlock()
+	
+	json.NewEncoder(w).Encode(logs)
+}
+
+func (g *Gateway) handleAPIGatewayLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	
+	g.logsMu.RLock()
+	logs := make([]LogEntry, len(g.gatewayLogs))
+	copy(logs, g.gatewayLogs)
+	g.logsMu.RUnlock()
+	
+	json.NewEncoder(w).Encode(logs)
+}
+
+// ============== COMMAND POLLING ==============
+
+func (g *Gateway) commandPoller() {
+	if g.config.GatewayToken == "" {
+		log.Printf("⚠️ No token, command polling disabled")
+		return
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	g.addGatewayLog("info", "Command polling started (every 5s)")
+
+	for g.running {
+		select {
+		case <-ticker.C:
+			g.pollCommands()
+		}
+	}
+}
+
+func (g *Gateway) pollCommands() {
+	if g.config.GatewayToken == "" {
+		return
+	}
+
+	url := g.config.BackendURL + "/api/v1/commands/pending"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-Device-Token", g.config.GatewayToken)
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		g.addGatewayLog("error", "Failed to poll commands: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return
+	}
+
+	var cmd BackendCommand
+	if err := json.NewDecoder(resp.Body).Decode(&cmd); err != nil {
+		return
+	}
+
+	// No command or empty response
+	if cmd.ID == "" || cmd.Command == "" {
+		return
+	}
+
+	g.addGatewayLog("info", fmt.Sprintf("📥 Received command: %s (ID: %s)", cmd.Command, cmd.ID))
+	log.Printf("📥 Received command from backend: %s", cmd.Command)
+
+	// Execute command
+	success := g.executeCommand(cmd)
+
+	// Acknowledge command
+	g.acknowledgeCommand(cmd.ID, success)
+}
+
+func (g *Gateway) executeCommand(cmd BackendCommand) bool {
+	g.addGatewayLog("info", fmt.Sprintf("⚡ Executing: %s", cmd.Command))
+
+	switch cmd.Command {
+	case "reboot":
+		// Try to find target node from params
+		var params map[string]interface{}
+		if cmd.Params != "" {
+			json.Unmarshal([]byte(cmd.Params), &params)
+		}
+		
+		if nodeID, ok := params["node_id"].(float64); ok {
+			// Reboot specific mesh node
+			if err := g.SendCommand(uint32(nodeID), "reboot", nil); err != nil {
+				g.addGatewayLog("error", fmt.Sprintf("Failed to send reboot to node %d: %v", uint32(nodeID), err))
+				return false
+			}
+			g.addGatewayLog("info", fmt.Sprintf("✅ Sent reboot to node %d", uint32(nodeID)))
+			return true
+		} else {
+			// Broadcast reboot to all nodes
+			if err := g.BroadcastCommand("reboot", nil); err != nil {
+				g.addGatewayLog("error", "Failed to broadcast reboot: "+err.Error())
+				return false
+			}
+			g.addGatewayLog("info", "✅ Broadcasted reboot to all nodes")
+			return true
+		}
+
+	case "status":
+		// Request status from all nodes
+		g.BroadcastCommand("status", nil)
+		g.addGatewayLog("info", "✅ Requested status from all nodes")
+		return true
+
+	case "toggle":
+		var params map[string]interface{}
+		if cmd.Params != "" {
+			json.Unmarshal([]byte(cmd.Params), &params)
+		}
+		if nodeID, ok := params["node_id"].(float64); ok {
+			if err := g.SendCommand(uint32(nodeID), "toggle", params["value"]); err != nil {
+				g.addGatewayLog("error", fmt.Sprintf("Failed to toggle node %d: %v", uint32(nodeID), err))
+				return false
+			}
+			g.addGatewayLog("info", fmt.Sprintf("✅ Sent toggle to node %d", uint32(nodeID)))
+			return true
+		}
+		return false
+
+	default:
+		g.addGatewayLog("warn", "Unknown command: "+cmd.Command)
+		return false
+	}
+}
+
+func (g *Gateway) acknowledgeCommand(cmdID string, success bool) {
+	status := "completed"
+	if !success {
+		status = "failed"
+	}
+
+	url := g.config.BackendURL + "/api/v1/devices/commands/" + cmdID + "/ack"
+	body, _ := json.Marshal(map[string]string{"status": status})
+	
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Device-Token", g.config.GatewayToken)
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		g.addGatewayLog("error", "Failed to ack command: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	g.addGatewayLog("info", fmt.Sprintf("📤 Command %s acknowledged as %s", cmdID, status))
 }
