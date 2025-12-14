@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -71,7 +71,6 @@ export default function SKUD() {
   const t = useTranslation();
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [activeTab, setActiveTab] = useState<TabType>('cards');
@@ -270,7 +269,7 @@ export default function SKUD() {
       skudApi.updateCard(id, { name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
-      toast.success(t.cardUpdated || 'Картку оновлено');
+      toast.success(t.cardStatusUpdated);
     },
     onError: () => toast.error(t.error),
   });
@@ -421,10 +420,13 @@ export default function SKUD() {
                           </button>
                         </div>
                       )}
-                      {/* Card UID (always visible) */}
-                      <p className="font-mono text-xs text-dark-400 mb-2 truncate">
+                      {/* Card UID (always visible) - clickable to go to detail */}
+                      <Link 
+                        to={`/skud/cards/${card.id}`}
+                        className="font-mono text-xs text-dark-400 mb-2 truncate block hover:text-primary-400 transition-colors"
+                      >
                         UID: {card.card_uid}
-                      </p>
+                      </Link>
                       <StatusBadge status={card.status} />
                     </div>
                     <button
