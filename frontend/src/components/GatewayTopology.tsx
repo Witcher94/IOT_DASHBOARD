@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { gatewayApi, metricsApi } from '../services/api';
 import type { GatewayTopology, Device } from '../types';
-import { Cpu, Wifi, Activity, RefreshCw, Power, Thermometer, HardDrive, Terminal } from 'lucide-react';
+import { Cpu, Wifi, Activity, RefreshCw, Power, Thermometer, HardDrive, Terminal, ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'react-hot-toast';
