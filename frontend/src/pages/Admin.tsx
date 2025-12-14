@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, Cpu, Shield, Mail, Clock, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronUp, Eye, ExternalLink } from 'lucide-react';
+import { Users, Cpu, Shield, Mail, Clock, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronUp,  ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { adminApi, dashboardApi } from '../services/api';
