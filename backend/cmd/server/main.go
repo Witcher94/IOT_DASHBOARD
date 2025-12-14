@@ -119,7 +119,14 @@ func main() {
 				devices.GET("/:id/commands", deviceHandler.GetCommands)
 				devices.DELETE("/:id/commands/:commandId", deviceHandler.CancelCommand)
 				devices.PUT("/:id/alerts", deviceHandler.UpdateAlertSettings)
+				// Sharing
+				devices.POST("/:id/shares", deviceHandler.ShareDevice)
+				devices.GET("/:id/shares", deviceHandler.GetDeviceShares)
+				devices.DELETE("/:id/shares/:userId", deviceHandler.DeleteDeviceShare)
 			}
+
+			// Shared devices
+			protected.GET("/shared-devices", deviceHandler.GetSharedDevices)
 
 			// Dashboard routes
 			dashboard := protected.Group("/dashboard")

@@ -152,6 +152,25 @@ type DeviceCommand struct {
 	Name        string `json:"name,omitempty"`
 }
 
+// DeviceShare represents shared access to a device
+type DeviceShare struct {
+	ID           uuid.UUID `json:"id"`
+	DeviceID     uuid.UUID `json:"device_id"`
+	OwnerID      uuid.UUID `json:"owner_id"`
+	SharedWithID uuid.UUID `json:"shared_with_id"`
+	Permission   string    `json:"permission"` // "view" or "edit"
+	CreatedAt    time.Time `json:"created_at"`
+	// Joined fields for display
+	SharedWithName  string `json:"shared_with_name,omitempty"`
+	SharedWithEmail string `json:"shared_with_email,omitempty"`
+}
+
+// ShareDeviceRequest request to share a device
+type ShareDeviceRequest struct {
+	Email      string `json:"email" binding:"required,email"`
+	Permission string `json:"permission"` // "view" or "edit" (default: view)
+}
+
 // CreateDeviceRequest запит на створення пристрою
 type CreateDeviceRequest struct {
 	Name       string `json:"name" binding:"required"`

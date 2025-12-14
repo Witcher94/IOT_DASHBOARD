@@ -113,6 +113,18 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS mesh_node_id BIGINT`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_gateway_id ON devices(gateway_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type)`,
+		// Device sharing
+		`CREATE TABLE IF NOT EXISTS device_shares (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+			owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			shared_with_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			permission VARCHAR(20) DEFAULT 'view',
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			UNIQUE(device_id, shared_with_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_device_shares_device_id ON device_shares(device_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_device_shares_shared_with ON device_shares(shared_with_id)`,
 	}
 
 	for _, migration := range migrations {

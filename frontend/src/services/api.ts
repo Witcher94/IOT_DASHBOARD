@@ -3,6 +3,7 @@ import { useAuthStore } from '../contexts/authStore';
 import type {
   User,
   Device,
+  DeviceShare,
   Metric,
   Command,
   DashboardStats,
@@ -91,6 +92,26 @@ export const devicesApi = {
   }): Promise<Device> => {
     const { data } = await api.put(`/devices/${id}/alerts`, settings);
     return data;
+  },
+
+  // Sharing
+  shareDevice: async (id: string, email: string, permission: string = 'view'): Promise<DeviceShare> => {
+    const { data } = await api.post(`/devices/${id}/shares`, { email, permission });
+    return data;
+  },
+
+  getShares: async (id: string): Promise<DeviceShare[]> => {
+    const { data } = await api.get(`/devices/${id}/shares`);
+    return data || [];
+  },
+
+  removeShare: async (id: string, userId: string): Promise<void> => {
+    await api.delete(`/devices/${id}/shares/${userId}`);
+  },
+
+  getSharedWithMe: async (): Promise<Device[]> => {
+    const { data } = await api.get('/shared-devices');
+    return data || [];
   },
 };
 

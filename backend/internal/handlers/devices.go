@@ -471,3 +471,148 @@ func (h *DeviceHandler) AcknowledgeCommand(c *gin.Context) {
 	log.Printf("[CMD TRACE] Command %s acknowledged successfully", commandID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
+
+// ShareDevice shares a device with another user
+func (h *DeviceHandler) ShareDevice(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device ID"})
+		return
+	}
+
+	// Check if user owns the device
+	device, err := h.db.GetDeviceByID(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
+		return
+	}
+	if device.UserID != userID.(uuid.UUID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you can only share your own devices"})
+		return
+	}
+
+	var req models.ShareDeviceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Find user by email
+	targetUser, err := h.db.GetUserByEmail(c.Request.Context(), req.Email)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found with this email"})
+		return
+	}
+
+	if targetUser.ID == userID.(uuid.UUID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot share with yourself"})
+		return
+	}
+
+	permission := req.Permission
+	if permission == "" {
+		permission = "view"
+	}
+
+	share := &models.DeviceShare{
+		DeviceID:     deviceID,
+		OwnerID:      userID.(uuid.UUID),
+		SharedWithID: targetUser.ID,
+		Permission:   permission,
+	}
+
+	if err := h.db.CreateDeviceShare(c.Request.Context(), share); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "already shared with this user"})
+		return
+	}
+
+	share.SharedWithName = targetUser.Name
+	share.SharedWithEmail = targetUser.Email
+
+	log.Printf("[SHARE] Device %s shared with %s (%s) by %s", deviceID, targetUser.Email, permission, userID)
+	c.JSON(http.StatusCreated, share)
+}
+
+// GetDeviceShares returns all shares for a device
+func (h *DeviceHandler) GetDeviceShares(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device ID"})
+		return
+	}
+
+	// Check if user owns the device
+	device, err := h.db.GetDeviceByID(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
+		return
+	}
+	if device.UserID != userID.(uuid.UUID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only owner can view shares"})
+		return
+	}
+
+	shares, err := h.db.GetDeviceShares(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if shares == nil {
+		shares = []models.DeviceShare{}
+	}
+	c.JSON(http.StatusOK, shares)
+}
+
+// DeleteDeviceShare removes sharing access
+func (h *DeviceHandler) DeleteDeviceShare(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	deviceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device ID"})
+		return
+	}
+
+	sharedWithID, err := uuid.Parse(c.Param("userId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	// Check if user owns the device
+	device, err := h.db.GetDeviceByID(c.Request.Context(), deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
+		return
+	}
+	if device.UserID != userID.(uuid.UUID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only owner can remove shares"})
+		return
+	}
+
+	if err := h.db.DeleteDeviceShare(c.Request.Context(), deviceID, sharedWithID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	log.Printf("[SHARE] Device %s unshared with %s by %s", deviceID, sharedWithID, userID)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// GetSharedDevices returns devices shared with current user
+func (h *DeviceHandler) GetSharedDevices(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	devices, err := h.db.GetSharedDevices(c.Request.Context(), userID.(uuid.UUID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if devices == nil {
+		devices = []models.Device{}
+	}
+	c.JSON(http.StatusOK, devices)
+}

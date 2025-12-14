@@ -18,7 +18,9 @@ import {
   Bell,
   BellOff,
   X,
+  Share2,
 } from 'lucide-react';
+import ShareModal from '../components/ShareModal';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -63,6 +65,7 @@ export default function DeviceDetail() {
   const [selectedPeriod, setSelectedPeriod] = useState('1h');
   const [copiedToken, setCopiedToken] = useState(false);
   const [visibleToken, setVisibleToken] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const { data: device, isLoading: deviceLoading } = useQuery({
     queryKey: ['device', id],
@@ -290,16 +293,25 @@ export default function DeviceDetail() {
             {device.platform} • {device.firmware} • <span className="hidden sm:inline">{device.mac}</span>
           </p>
         </div>
-        <button
-          onClick={() => {
-            if (confirm(t.confirm + '?')) {
-              deleteMutation.mutate();
-            }
-          }}
-          className="p-2 md:p-2.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
-        >
-          <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="p-2 md:p-2.5 rounded-lg hover:bg-primary-500/20 text-primary-400 transition-colors shrink-0"
+            title="Share device"
+          >
+            <Share2 className="w-4 h-4 md:w-5 md:h-5" />
+          </button>
+          <button
+            onClick={() => {
+              if (confirm(t.confirm + '?')) {
+                deleteMutation.mutate();
+              }
+            }}
+            className="p-2 md:p-2.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
+          >
+            <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
+          </button>
+        </div>
       </motion.div>
 
       {/* Gateway Topology */}
@@ -634,6 +646,16 @@ export default function DeviceDetail() {
           )}
         </motion.div>
       </div>
+
+      {/* Share Modal */}
+      {device && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          deviceId={device.id}
+          deviceName={device.name}
+        />
+      )}
     </div>
   );
 }

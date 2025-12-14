@@ -33,6 +33,17 @@ export interface Device {
   updated_at: string;
 }
 
+export interface DeviceShare {
+  id: string;
+  device_id: string;
+  owner_id: string;
+  shared_with_id: string;
+  permission: 'view' | 'edit';
+  created_at: string;
+  shared_with_name?: string;
+  shared_with_email?: string;
+}
+
 export interface Metric {
   id: string;
   device_id: string;
