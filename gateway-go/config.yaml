@@ -27,3 +27,4 @@ nodes:
   timeout: 120  # Mark offline after N seconds without data
   auto_register: true  # Auto-register new nodes in backend
 
+

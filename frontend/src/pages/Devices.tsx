@@ -97,11 +97,22 @@ export default function Devices() {
     }
   };
 
-  const filteredDevices = devices?.filter((device) =>
-    device.name.toLowerCase().includes(search.toLowerCase()) ||
-    device.chip_id?.toLowerCase().includes(search.toLowerCase()) ||
-    device.mac?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filter: show only gateway and simple_device (hide mesh_node - they're shown in topology)
+  // Hide devices that have gateway_id or mesh_node_id (they're mesh nodes shown in topology)
+  const filteredDevices = devices?.filter((device) => {
+    const matchesSearch = device.name.toLowerCase().includes(search.toLowerCase()) ||
+      device.chip_id?.toLowerCase().includes(search.toLowerCase()) ||
+      device.mac?.toLowerCase().includes(search.toLowerCase());
+    
+    // Hide mesh nodes (they have gateway_id or mesh_node_id)
+    if (device.gateway_id || device.mesh_node_id) {
+      return false;
+    }
+    
+    // Show gateway and simple_device (or null device_type which defaults to simple_device)
+    const isVisible = !device.device_type || device.device_type === 'simple_device' || device.device_type === 'gateway';
+    return matchesSearch && isVisible;
+  });
 
   return (
     <div className="p-8">

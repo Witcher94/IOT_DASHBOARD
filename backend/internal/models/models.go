@@ -160,9 +160,18 @@ type CreateDeviceRequest struct {
 
 // BatchMetricsPayload payload від gateway з метриками всіх нод
 type BatchMetricsPayload struct {
-	GatewayID string             `json:"gateway_id"`
-	Timestamp time.Time          `json:"timestamp"`
-	Nodes     []NodeMetricsBatch `json:"nodes"`
+	GatewayID      string             `json:"gateway_id"`
+	Timestamp      time.Time          `json:"timestamp"`
+	Nodes          []NodeMetricsBatch `json:"nodes"`
+	GatewayMetrics *GatewayMetrics    `json:"gateway_metrics,omitempty"`
+}
+
+// GatewayMetrics represents RPi gateway system metrics
+type GatewayMetrics struct {
+	CPUUsage    float64 `json:"cpu_usage"`    // CPU usage %
+	MemoryUsage float64 `json:"memory_usage"` // Memory usage %
+	CPUTemp     float64 `json:"cpu_temp"`     // CPU temperature in Celsius
+	Uptime      int64   `json:"uptime"`       // Uptime in seconds
 }
 
 // NodeMetricsBatch метрики однієї ноди в batch

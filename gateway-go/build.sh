@@ -45,3 +45,4 @@ echo "To run on Raspberry Pi:"
 echo "  chmod +x mesh-gateway-linux-arm64"
 echo "  ./mesh-gateway-linux-arm64 --port /dev/ttyUSB0 --backend https://chnu-iot.com --debug"
 
+

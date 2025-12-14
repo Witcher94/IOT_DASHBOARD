@@ -10,8 +10,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -139,9 +141,18 @@ type MetricsData struct {
 
 // BatchMetricsPayload for backend (matches backend model)
 type BatchMetricsPayload struct {
-	GatewayID string       `json:"gateway_id"`
-	Timestamp time.Time    `json:"timestamp"`
-	Nodes     []NodeMetric `json:"nodes"`
+	GatewayID      string          `json:"gateway_id"`
+	Timestamp      time.Time       `json:"timestamp"`
+	Nodes          []NodeMetric    `json:"nodes"`
+	GatewayMetrics *GatewayMetrics `json:"gateway_metrics,omitempty"`
+}
+
+// GatewayMetrics represents RPi gateway system metrics
+type GatewayMetrics struct {
+	CPUUsage    float64 `json:"cpu_usage"`    // CPU usage %
+	MemoryUsage float64 `json:"memory_usage"` // Memory usage %
+	CPUTemp     float64 `json:"cpu_temp"`     // CPU temperature in Celsius
+	Uptime      int64   `json:"uptime"`       // Uptime in seconds
 }
 
 type NodeMetric struct {
@@ -583,14 +594,15 @@ func (g *Gateway) sendBatchMetrics() {
 	}
 	g.nodesMu.RUnlock()
 
-	if len(metrics) == 0 {
-		return
-	}
+	// Collect gateway metrics (always send, even without nodes)
+	gatewayMetrics := g.collectGatewayMetrics()
 
+	// Always send metrics to update gateway status
 	payload := BatchMetricsPayload{
-		GatewayID: "rpi-gateway",
-		Timestamp: time.Now(),
-		Nodes:     metrics,
+		GatewayID:      "rpi-gateway",
+		Timestamp:      time.Now(),
+		Nodes:          metrics,
+		GatewayMetrics: gatewayMetrics,
 	}
 
 	jsonData, _ := json.Marshal(payload)
@@ -615,7 +627,12 @@ func (g *Gateway) sendBatchMetrics() {
 		g.stats.BatchesSent++
 		g.stats.LastBatchTime = time.Now()
 		g.stats.mu.Unlock()
-		log.Printf("✅ Sent %d nodes to backend", len(metrics))
+		if gatewayMetrics != nil {
+			log.Printf("✅ Sent %d nodes + gateway metrics (CPU=%.1f%%, Mem=%.1f%%, Temp=%.1f°C)",
+				len(metrics), gatewayMetrics.CPUUsage, gatewayMetrics.MemoryUsage, gatewayMetrics.CPUTemp)
+		} else {
+			log.Printf("✅ Sent %d nodes to backend", len(metrics))
+		}
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ Backend responded %d: %s", resp.StatusCode, string(body))
@@ -623,6 +640,90 @@ func (g *Gateway) sendBatchMetrics() {
 		g.stats.Errors++
 		g.stats.mu.Unlock()
 	}
+}
+
+// collectGatewayMetrics collects RPi system metrics
+func (g *Gateway) collectGatewayMetrics() *GatewayMetrics {
+	metrics := &GatewayMetrics{}
+
+	// CPU usage
+	if cpuUsage := getCPUUsage(); cpuUsage >= 0 {
+		metrics.CPUUsage = cpuUsage
+	}
+
+	// Memory usage
+	if memUsage := getMemoryUsage(); memUsage >= 0 {
+		metrics.MemoryUsage = memUsage
+	}
+
+	// CPU temperature
+	if cpuTemp := getCPUTemperature(); cpuTemp >= 0 {
+		metrics.CPUTemp = cpuTemp
+	}
+
+	// Uptime
+	if uptime := getUptime(); uptime >= 0 {
+		metrics.Uptime = uptime
+	}
+
+	log.Printf("📊 Gateway metrics: CPU=%.1f%%, Mem=%.1f%%, Temp=%.1f°C, Uptime=%ds",
+		metrics.CPUUsage, metrics.MemoryUsage, metrics.CPUTemp, metrics.Uptime)
+
+	return metrics
+}
+
+func getCPUUsage() float64 {
+	cmd := exec.Command("sh", "-c", "top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\([0-9.]*\\)%%* id.*/\\1/' | awk '{print 100 - $1}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return -1
+	}
+	usage, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
+	if err != nil {
+		return -1
+	}
+	return usage
+}
+
+func getMemoryUsage() float64 {
+	cmd := exec.Command("sh", "-c", "free | grep Mem | awk '{printf \"%.1f\", $3/$2 * 100.0}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return -1
+	}
+	usage, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
+	if err != nil {
+		return -1
+	}
+	return usage
+}
+
+func getCPUTemperature() float64 {
+	data, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp")
+	if err != nil {
+		return -1
+	}
+	temp, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
+	if err != nil {
+		return -1
+	}
+	return temp / 1000.0 // millidegrees to Celsius
+}
+
+func getUptime() int64 {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return -1
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return -1
+	}
+	uptime, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return -1
+	}
+	return int64(uptime)
 }
 
 func (g *Gateway) SendCommand(nodeID uint32, command string, value interface{}) error {

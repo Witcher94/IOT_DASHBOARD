@@ -111,6 +111,28 @@ func (h *GatewayHandler) ReceiveBatchMetrics(c *gin.Context) {
 
 	log.Printf("[BATCH] Processed %d/%d nodes from gateway %s", processedNodes, len(payload.Nodes), gateway.Name)
 
+	// Save gateway metrics (CPU, Memory, Temp) if provided
+	if payload.GatewayMetrics != nil {
+		gm := payload.GatewayMetrics
+		log.Printf("[BATCH] Gateway metrics: CPU=%.1f%%, Mem=%.1f%%, Temp=%.1f°C, Uptime=%ds",
+			gm.CPUUsage, gm.MemoryUsage, gm.CPUTemp, gm.Uptime)
+
+		// Store gateway metrics as a Metric record
+		// Use: temperature = CPU temp, humidity = memory %, free_heap = CPU usage * 10
+		cpuUsageInt := int64(gm.CPUUsage * 10) // Store as int (scaled by 10)
+		metric := &models.Metric{
+			DeviceID:    gateway.ID,
+			Temperature: &gm.CPUTemp,
+			Humidity:    &gm.MemoryUsage,
+			FreeHeap:    &cpuUsageInt,
+		}
+		if err := h.db.CreateMetric(c.Request.Context(), metric); err != nil {
+			log.Printf("[BATCH] Failed to save gateway metrics: %v", err)
+		} else {
+			log.Printf("[BATCH] Gateway metrics saved: Temp=%.1f, Mem=%.1f, CPU=%d", gm.CPUTemp, gm.MemoryUsage, cpuUsageInt)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":          "ok",
 		"processed_nodes": processedNodes,
