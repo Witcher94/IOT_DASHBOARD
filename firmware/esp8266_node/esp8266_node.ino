@@ -13,8 +13,8 @@
 #define FIRMWARE_VERSION "node-esp8266-1.0.0"
 
 // Mesh settings (MUST MATCH BRIDGE!)
-#define MESH_PREFIX     "iot_mesh_network"
-#define MESH_PASSWORD   "mesh_secret_123"
+#define MESH_PREFIX     "iot_mesh"
+#define MESH_PASSWORD   "mesh12345"
 #define MESH_PORT       5555
 #define MESH_CHANNEL    6
 
