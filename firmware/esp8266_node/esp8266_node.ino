@@ -108,7 +108,14 @@ String buildMetricsJson() {
     // Mesh info
     JsonObject meshInfo = doc.createNestedObject("mesh");
     meshInfo["node_count"] = mesh.getNodeList().size() + 1;
-    meshInfo["rssi"] = WiFi.RSSI();
+    // Get RSSI to parent node (if connected as STA)
+    int rssi = WiFi.RSSI();
+    if (rssi == 0 && WiFi.status() == WL_CONNECTED) {
+        rssi = -50; // Connected but RSSI not available
+    } else if (rssi == 0) {
+        rssi = -70; // Estimate for mesh connection
+    }
+    meshInfo["rssi"] = rssi;
     
     String output;
     serializeJson(doc, output);

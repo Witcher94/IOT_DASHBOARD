@@ -58,6 +58,7 @@ void sendOwnMetrics() {
     data["platform"] = "ESP32";
     data["free_heap"] = ESP.getFreeHeap();
     data["is_root"] = true;
+    data["rssi"] = 0; // Bridge is root, connected via USB - no wireless RSSI
     
     String out;
     serializeJson(doc, out);
