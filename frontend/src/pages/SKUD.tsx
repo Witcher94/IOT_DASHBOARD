@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -13,12 +14,13 @@ import {
   WifiOff,
   Search,
   RotateCcw,
+  Cpu,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { skudApi } from '../services/api';
+import { skudApi, devicesApi } from '../services/api';
 import { useTranslation } from '../contexts/settingsStore';
 import { useAuthStore } from '../contexts/authStore';
-import type { CardStatus, AccessLog } from '../types';
+import type { CardStatus, AccessLog, Device } from '../types';
 
 type TabType = 'cards' | 'logs';
 
@@ -66,7 +68,10 @@ export default function SKUD() {
   const t = useTranslation();
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
   const [activeTab, setActiveTab] = useState<TabType>('cards');
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>(searchParams.get('device') || '');
   const [statusFilter, setStatusFilter] = useState<CardStatus | ''>('');
   
   // Log filters
@@ -80,11 +85,40 @@ export default function SKUD() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
+  // Fetch SKUD devices
+  const { data: allDevices } = useQuery({
+    queryKey: ['devices'],
+    queryFn: devicesApi.getAll,
+  });
+
+  // Filter only SKUD devices
+  const skudDevices = allDevices?.filter((d: Device) => d.device_type === 'skud') || [];
+
+  // Update URL when device changes
+  const handleDeviceChange = (deviceId: string) => {
+    setSelectedDeviceId(deviceId);
+    if (deviceId) {
+      setSearchParams({ device: deviceId });
+    } else {
+      setSearchParams({});
+    }
+  };
+
+  // Auto-select first device if none selected and devices loaded
+  useEffect(() => {
+    if (!selectedDeviceId && skudDevices.length > 0) {
+      handleDeviceChange(skudDevices[0].id);
+    }
+  }, [skudDevices, selectedDeviceId]);
+
   // Load logs with filters
   const loadLogs = useCallback(async () => {
+    if (!selectedDeviceId) return;
+    
     try {
       const filters: Parameters<typeof skudApi.getAccessLogs>[0] = {
         limit: 100,
+        device_id: selectedDeviceId,
       };
       if (logActionFilter) filters.action = logActionFilter;
       if (logAllowedFilter === 'true') filters.allowed = true;
@@ -96,7 +130,7 @@ export default function SKUD() {
     } catch (e) {
       console.error('[SKUD] Failed to load logs:', e);
     }
-  }, [logActionFilter, logAllowedFilter, logCardUidFilter]);
+  }, [logActionFilter, logAllowedFilter, logCardUidFilter, selectedDeviceId]);
 
   // Connect to WebSocket for real-time logs
   const connectWebSocket = useCallback(async () => {
@@ -196,11 +230,11 @@ export default function SKUD() {
     };
   }, [activeTab, connectWebSocket]);
 
-  // Queries
+  // Queries - filter cards by selected device
   const { data: cards, isLoading: cardsLoading } = useQuery({
-    queryKey: ['skud-cards', statusFilter],
-    queryFn: () => skudApi.getCards(statusFilter || undefined),
-    enabled: activeTab === 'cards',
+    queryKey: ['skud-cards', statusFilter, selectedDeviceId],
+    queryFn: () => skudApi.getCards(statusFilter || undefined, selectedDeviceId || undefined),
+    enabled: activeTab === 'cards' && !!selectedDeviceId,
   });
 
   // Mutations
@@ -236,10 +270,39 @@ export default function SKUD() {
         animate={{ opacity: 1, y: 0 }}
         className="mb-8"
       >
-        <h1 className="text-3xl font-bold mb-2">
-          <span className="gradient-text">SKUD</span>
-        </h1>
-        <p className="text-dark-400">{t.manageCards}</p>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">
+              <span className="gradient-text">SKUD</span>
+            </h1>
+            <p className="text-dark-400">{t.accessControl || 'Access Control System'}</p>
+          </div>
+          
+          {/* Device Selector */}
+          <div className="glass rounded-xl p-4 min-w-[300px]">
+            <div className="flex items-center gap-3 mb-2">
+              <Cpu className="w-5 h-5 text-primary-400" />
+              <span className="text-sm font-medium text-dark-300">{t.selectDevice || 'Select Device'}</span>
+            </div>
+            {skudDevices.length > 0 ? (
+              <select
+                value={selectedDeviceId}
+                onChange={(e) => handleDeviceChange(e.target.value)}
+                className="input-field w-full"
+              >
+                {skudDevices.map((device: Device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name} {device.is_online ? '🟢' : '🔴'}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-sm text-dark-400">
+                {t.noSkudDevices || 'No SKUD devices found. Create one in Devices page.'}
+              </p>
+            )}
+          </div>
+        </div>
       </motion.div>
 
       {/* Tabs */}

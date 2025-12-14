@@ -134,11 +134,46 @@ func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, e
 }
 
 func (db *DB) GetAllCards(ctx context.Context) ([]models.Card, error) {
-	query := `
-		SELECT id, card_uid, status, created_at, updated_at
-		FROM cards ORDER BY updated_at DESC
-	`
-	rows, err := db.Pool.Query(ctx, query)
+	return db.GetCardsFiltered(ctx, "", nil)
+}
+
+func (db *DB) GetCardsByStatus(ctx context.Context, status string) ([]models.Card, error) {
+	return db.GetCardsFiltered(ctx, status, nil)
+}
+
+// GetCardsFiltered returns cards with optional status and device filters
+func (db *DB) GetCardsFiltered(ctx context.Context, status string, deviceID *uuid.UUID) ([]models.Card, error) {
+	var query string
+	var args []interface{}
+	argNum := 1
+
+	if deviceID != nil {
+		// Filter cards linked to specific device
+		query = `
+			SELECT DISTINCT c.id, c.card_uid, c.status, c.created_at, c.updated_at
+			FROM cards c
+			INNER JOIN card_devices cd ON cd.card_id = c.id
+			WHERE cd.device_id = $1
+		`
+		args = append(args, *deviceID)
+		argNum++
+
+		if status != "" {
+			query += fmt.Sprintf(" AND c.status = $%d", argNum)
+			args = append(args, status)
+		}
+		query += " ORDER BY c.updated_at DESC"
+	} else {
+		// All cards
+		query = `SELECT id, card_uid, status, created_at, updated_at FROM cards`
+		if status != "" {
+			query += fmt.Sprintf(" WHERE status = $%d", argNum)
+			args = append(args, status)
+		}
+		query += " ORDER BY updated_at DESC"
+	}
+
+	rows, err := db.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -153,32 +188,6 @@ func (db *DB) GetAllCards(ctx context.Context) ([]models.Card, error) {
 			return nil, err
 		}
 		// Load linked devices for each card
-		devices, _ := db.GetCardDevices(ctx, card.ID)
-		card.Devices = devices
-		cards = append(cards, card)
-	}
-	return cards, nil
-}
-
-func (db *DB) GetCardsByStatus(ctx context.Context, status string) ([]models.Card, error) {
-	query := `
-		SELECT id, card_uid, status, created_at, updated_at
-		FROM cards WHERE status = $1 ORDER BY updated_at DESC
-	`
-	rows, err := db.Pool.Query(ctx, query, status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cards []models.Card
-	for rows.Next() {
-		var card models.Card
-		if err := rows.Scan(
-			&card.ID, &card.CardUID, &card.Status, &card.CreatedAt, &card.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
 		devices, _ := db.GetCardDevices(ctx, card.ID)
 		card.Devices = devices
 		cards = append(cards, card)

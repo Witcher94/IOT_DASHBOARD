@@ -93,20 +93,30 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 
 func (h *SKUDHandler) GetCards(c *gin.Context) {
 	status := c.Query("status")
+	deviceID := c.Query("device_id")
 
 	var cards []models.Card
 	var err error
 
-	if status != "" {
-		// Validate status
-		if status != models.CardStatusPending && status != models.CardStatusActive && status != models.CardStatusDisabled {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status", "error_code": "INVALID_STATUS"})
+	// Parse device UUID if provided
+	var deviceUUID *uuid.UUID
+	if deviceID != "" {
+		parsed, parseErr := uuid.Parse(deviceID)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device_id", "error_code": "INVALID_DEVICE_ID"})
 			return
 		}
-		cards, err = h.db.GetCardsByStatus(c.Request.Context(), status)
-	} else {
-		cards, err = h.db.GetAllCards(c.Request.Context())
+		deviceUUID = &parsed
 	}
+
+	// Validate status if provided
+	if status != "" && status != models.CardStatusPending && status != models.CardStatusActive && status != models.CardStatusDisabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status", "error_code": "INVALID_STATUS"})
+		return
+	}
+
+	// Get cards with filters
+	cards, err = h.db.GetCardsFiltered(c.Request.Context(), status, deviceUUID)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

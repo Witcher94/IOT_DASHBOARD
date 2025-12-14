@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Cpu,
@@ -9,6 +9,7 @@ import {
   Trash2,
   ExternalLink,
   HardDrive,
+  CreditCard,
 } from 'lucide-react';
 import { useDateFormat } from '../utils/dateFormat';
 import { useTranslation } from '../contexts/settingsStore';
@@ -37,6 +38,7 @@ export default function DeviceCard({
 }: DeviceCardProps) {
   const { formatRelative } = useDateFormat();
   const t = useTranslation();
+  const navigate = useNavigate();
 
   // Round to nearest whole number (24.1 → 24, 24.5 → 25)
   const formatTemp = (temp?: number | null) => 
@@ -46,19 +48,29 @@ export default function DeviceCard({
   const formatRssi = (r?: number | null) => 
     r != null ? `${r}dBm` : 'WiFi';
   
-  // For gateway: humidity = memory %, free_heap/10 = CPU %
+  // Device type checks
   const isGateway = device.device_type === 'gateway';
+  const isSKUD = device.device_type === 'skud';
+  
   const formatCpuUsage = (heap?: number | null) => 
     heap != null ? `${(heap / 10).toFixed(0)}%` : '--%';
   const formatMemUsage = (mem?: number | null) => 
     mem != null ? `${mem.toFixed(0)}%` : '--%';
+
+  // Handle card click - SKUD devices go to SKUD page
+  const handleCardClick = () => {
+    if (isSKUD) {
+      navigate(`/skud?device=${device.id}`);
+    }
+  };
   
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
+      onClick={isSKUD ? handleCardClick : undefined}
       className={`glass rounded-xl p-5 card-hover relative overflow-hidden ${
         isOnline ? 'border-green-500/30' : 'border-dark-600/50'
-      }`}
+      } ${isSKUD ? 'cursor-pointer' : ''}`}
     >
       {/* Status indicator */}
       <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 ${
@@ -108,42 +120,49 @@ export default function DeviceCard({
           </span>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          {isGateway ? (
-            <>
-              {/* Gateway: CPU Temp, Memory %, CPU % */}
-              <div className="text-center p-2 rounded-lg bg-dark-800/50">
-                <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatTemp(temperature)}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-dark-800/50">
-                <HardDrive className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatMemUsage(humidity)}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-dark-800/50">
-                <Cpu className="w-4 h-4 text-green-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatCpuUsage(freeHeap)}</p>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Regular device: Temp, Humidity, WiFi */}
-              <div className="text-center p-2 rounded-lg bg-dark-800/50">
-                <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatTemp(temperature)}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-dark-800/50">
-                <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatHum(humidity)}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-dark-800/50">
-                <Wifi className="w-4 h-4 text-purple-400 mx-auto mb-1" />
-                <p className="text-sm font-medium">{formatRssi(rssi)}</p>
-              </div>
-            </>
-          )}
-        </div>
+        {/* Stats - Hidden for SKUD devices */}
+        {isSKUD ? (
+          <div className="flex items-center justify-center gap-3 mb-4 p-4 rounded-lg bg-dark-800/50">
+            <CreditCard className="w-5 h-5 text-blue-400" />
+            <p className="text-sm text-dark-300">{t.manageCards || 'Click to manage cards'}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {isGateway ? (
+              <>
+                {/* Gateway: CPU Temp, Memory %, CPU % */}
+                <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                  <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
+                  <p className="text-sm font-medium">{formatTemp(temperature)}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                  <HardDrive className="w-4 h-4 text-blue-400 mx-auto mb-1" />
+                  <p className="text-sm font-medium">{formatMemUsage(humidity)}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                  <Cpu className="w-4 h-4 text-green-400 mx-auto mb-1" />
+                  <p className="text-sm font-medium">{formatCpuUsage(freeHeap)}</p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Regular device: Temp, Humidity, WiFi */}
+                <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                  <Thermometer className="w-4 h-4 text-orange-400 mx-auto mb-1" />
+                  <p className="text-sm font-medium">{formatTemp(temperature)}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                  <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
+                  <p className="text-sm font-medium">{formatHum(humidity)}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-dark-800/50">
+                  <Wifi className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+                  <p className="text-sm font-medium">{formatRssi(rssi)}</p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-dark-700/50">
@@ -167,7 +186,8 @@ export default function DeviceCard({
               </button>
             )}
             <Link
-              to={`/devices/${device.id}`}
+              to={isSKUD ? `/skud?device=${device.id}` : `/devices/${device.id}`}
+              onClick={(e) => e.stopPropagation()}
               className="p-1.5 rounded-lg hover:bg-primary-500/20 text-dark-400 hover:text-primary-400 transition-colors"
             >
               <ExternalLink className="w-4 h-4" />

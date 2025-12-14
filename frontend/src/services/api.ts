@@ -219,9 +219,11 @@ export interface LogEntry {
 // Note: Access devices are now created via the regular Devices page.
 // SKUD uses the same X-Device-Token as IoT devices.
 export const skudApi = {
-  // Cards
-  getCards: async (status?: string): Promise<Card[]> => {
-    const params = status ? { status } : {};
+  // Cards - filter by device_id to get cards linked to a specific device
+  getCards: async (status?: string, device_id?: string): Promise<Card[]> => {
+    const params: Record<string, string> = {};
+    if (status) params.status = status;
+    if (device_id) params.device_id = device_id;
     const { data } = await api.get('/skud/cards', { params });
     return data || [];
   },
