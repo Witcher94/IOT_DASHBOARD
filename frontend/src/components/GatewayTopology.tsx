@@ -1,17 +1,21 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { gatewayApi, metricsApi } from '../services/api';
 import type { GatewayTopology, Device } from '../types';
-import { Cpu, Wifi, Activity, RefreshCw, Power, Thermometer, HardDrive, Server, Radio } from 'lucide-react';
+import { Cpu, Wifi, Activity, RefreshCw, Power, Thermometer, HardDrive, Server, Radio, Terminal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'react-hot-toast';
+import LogsModal from './LogsModal';
 
 interface GatewayTopologyProps {
   gatewayId: string;
 }
 
 export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
+  const [showLogs, setShowLogs] = useState(false);
+  
   const { data: topology, isLoading, refetch } = useQuery({
     queryKey: ['gateway-topology', gatewayId],
     queryFn: () => gatewayApi.getTopology(gatewayId),
@@ -71,12 +75,21 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
             <Server className="w-5 h-5 text-primary" />
             Gateway Health
           </h3>
-          <button
-            onClick={() => refetch()}
-            className="p-2 hover:bg-dark-700 rounded-lg transition-colors text-dark-400 hover:text-white"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowLogs(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 rounded-lg transition-colors text-dark-300 hover:text-white text-sm"
+            >
+              <Terminal className="w-4 h-4" />
+              Logs
+            </button>
+            <button
+              onClick={() => refetch()}
+              className="p-2 hover:bg-dark-700 rounded-lg transition-colors text-dark-400 hover:text-white"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="bg-dark-900/50 rounded-xl p-3">
@@ -320,6 +333,13 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
           </div>
         </div>
       </motion.div>
+
+      {/* Logs Modal */}
+      <LogsModal
+        isOpen={showLogs}
+        onClose={() => setShowLogs(false)}
+        gatewayId={gatewayId}
+      />
     </div>
   );
 }

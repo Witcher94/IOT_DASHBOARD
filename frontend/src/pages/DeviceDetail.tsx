@@ -376,33 +376,56 @@ export default function DeviceDetail() {
       </motion.div>
 
       <div className="grid gap-4 md:gap-6 md:grid-cols-2">
-        {/* WiFi Networks */}
+        {/* WiFi Networks (for ESP) or Serial Ports (for Gateway) */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
           className="glass rounded-2xl p-6"
         >
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Wifi className="w-5 h-5 text-primary-400" />
-            {t.wifiNetworks}
-          </h2>
-          <div className="space-y-2 max-h-64 overflow-auto">
-            {latestMetric?.wifi_scan?.slice(0, 10).map((network, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-dark-800/50">
-                <div>
-                  <p className="font-medium text-sm">{network.ssid || '(Hidden)'}</p>
-                  <p className="text-xs text-dark-500">CH {network.channel} • {network.enc}</p>
+          {device?.device_type === 'gateway' ? (
+            <>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-primary-400" />
+                Serial Ports
+              </h2>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-dark-800/50">
+                  <div>
+                    <p className="font-medium text-sm">/dev/ttyUSB1</p>
+                    <p className="text-xs text-dark-500">ESP32 Bridge • 115200 baud</p>
+                  </div>
+                  <span className="px-2 py-1 rounded text-xs bg-green-500/20 text-green-400">Connected</span>
                 </div>
-                <div className="text-right">
-                  <p className={`text-sm font-mono ${
-                    network.rssi > -50 ? 'text-green-400' : 
-                    network.rssi > -70 ? 'text-yellow-400' : 'text-red-400'
-                  }`}>{network.rssi} dBm</p>
-                </div>
+                <p className="text-xs text-dark-500 mt-4">
+                  Gateway communicates with ESP32 mesh bridge via USB serial connection
+                </p>
               </div>
-            )) || <p className="text-dark-500 text-sm">{t.noDevicesFound}</p>}
-          </div>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Wifi className="w-5 h-5 text-primary-400" />
+                {t.wifiNetworks}
+              </h2>
+              <div className="space-y-2 max-h-64 overflow-auto">
+                {latestMetric?.wifi_scan?.slice(0, 10).map((network, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-dark-800/50">
+                    <div>
+                      <p className="font-medium text-sm">{network.ssid || '(Hidden)'}</p>
+                      <p className="text-xs text-dark-500">CH {network.channel} • {network.enc}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-sm font-mono ${
+                        network.rssi > -50 ? 'text-green-400' : 
+                        network.rssi > -70 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>{network.rssi} dBm</p>
+                    </div>
+                  </div>
+                )) || <p className="text-dark-500 text-sm">{t.noDevicesFound}</p>}
+              </div>
+            </>
+          )}
         </motion.div>
 
         {/* Quick Commands */}
