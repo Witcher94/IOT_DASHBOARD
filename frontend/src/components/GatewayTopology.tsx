@@ -53,11 +53,11 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
     return <div className="text-dark-400">Failed to load topology</div>;
   }
 
-  // Find bridge node (first node, usually ESP32 connected via serial)
+  // Find bridge node (ESP32 connected via serial - identified by firmware or name containing "bridge")
   const bridgeNode = topology.mesh_nodes.find(n => 
-    n.name?.toLowerCase().includes('bridge') || 
-    n.mesh_node_id === topology.mesh_nodes[0]?.mesh_node_id
-  ) || topology.mesh_nodes[0];
+    n.firmware?.toLowerCase().includes('bridge') || 
+    n.name?.toLowerCase().includes('bridge')
+  );
   
   // Other mesh nodes (excluding bridge)
   const meshNodes = topology.mesh_nodes.filter(n => n.id !== bridgeNode?.id);

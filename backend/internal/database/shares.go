@@ -108,14 +108,3 @@ func (db *DB) HasDeviceAccess(ctx context.Context, deviceID, userID uuid.UUID) (
 	return true, permission, nil
 }
 
-// GetUserByEmail finds a user by email
-func (db *DB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	query := `SELECT id, email, name, picture, is_admin, created_at, updated_at FROM users WHERE email = $1`
-	var u models.User
-	err := db.Pool.QueryRow(ctx, query, email).Scan(&u.ID, &u.Email, &u.Name, &u.Picture, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &u, nil
-}
-
