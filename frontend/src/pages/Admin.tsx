@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, Cpu, Shield, Mail, Clock, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Cpu, Shield, Mail, Clock, Trash2, ShieldCheck, ShieldOff, ChevronDown, ChevronUp, Eye, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { adminApi, dashboardApi } from '../services/api';
@@ -202,11 +203,16 @@ export default function Admin() {
                     {userDevices[user.id]?.length ? (
                       <div className="space-y-2">
                         {userDevices[user.id].map(device => (
-                          <div key={device.id} className="flex items-center gap-2 text-sm p-2 bg-dark-900/50 rounded-lg">
+                          <Link 
+                            key={device.id} 
+                            to={`/devices/${device.id}`}
+                            className="flex items-center gap-2 text-sm p-2 bg-dark-900/50 rounded-lg hover:bg-dark-700 transition-colors group"
+                          >
                             <div className={`w-2 h-2 rounded-full ${device.is_online ? 'bg-green-400' : 'bg-dark-500'}`} />
-                            <span>{device.name}</span>
-                            <span className="text-dark-500">({device.platform || 'Unknown'})</span>
-                          </div>
+                            <span className="flex-1">{device.name}</span>
+                            <span className="text-dark-500">({device.device_type === 'gateway' ? 'Raspberry Pi' : device.platform || 'ESP'})</span>
+                            <ExternalLink className="w-3 h-3 text-dark-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </Link>
                         ))}
                       </div>
                     ) : (

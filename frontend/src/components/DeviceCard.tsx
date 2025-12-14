@@ -86,7 +86,7 @@ export default function DeviceCard({
                 )}
               </div>
               <p className="text-xs text-dark-400">
-                {device.platform || 'ESP'} • {device.chip_id?.slice(0, 8) || 'Unknown'}
+                {device.device_type === 'gateway' ? 'Raspberry Pi' : (device.platform || 'ESP')} • {device.chip_id?.slice(0, 8) || 'Unknown'}
               </p>
             </div>
           </div>
