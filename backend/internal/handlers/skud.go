@@ -147,7 +147,45 @@ func (h *SKUDHandler) GetCard(c *gin.Context) {
 		return
 	}
 
+	// Include current token
+	token, err := h.db.GetCurrentCardToken(c.Request.Context(), id)
+	if err == nil {
+		card.Token = token
+	}
+
 	c.JSON(http.StatusOK, card)
+}
+
+// RegenerateCardToken generates a new token for a card
+// Old token remains valid for 24 hours for smooth transition
+// POST /skud/cards/:id/token
+func (h *SKUDHandler) RegenerateCardToken(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid card ID"})
+		return
+	}
+
+	card, err := h.db.GetCardByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Card not found", "error_code": "CARD_NOT_FOUND"})
+		return
+	}
+
+	// Generate new token (rotates old one with 24h expiry)
+	token, err := h.db.CreateCardToken(c.Request.Context(), id, true)
+	if err != nil {
+		log.Printf("[SKUD] Failed to regenerate token for card %s: %v", card.CardUID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to regenerate token"})
+		return
+	}
+
+	log.Printf("[SKUD] Token regenerated for card %s", card.CardUID)
+	
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"message": "Token regenerated. Old token valid for 24 hours.",
+	})
 }
 
 func (h *SKUDHandler) UpdateCardStatus(c *gin.Context) {

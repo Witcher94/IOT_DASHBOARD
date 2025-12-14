@@ -264,9 +264,20 @@ type Card struct {
 	CardType  string        `json:"card_type"` // MIFARE_CLASSIC_1K, MIFARE_DESFIRE, etc.
 	Name      string        `json:"name"`      // Custom display name for the card
 	Status    string        `json:"status"`    // pending, active, disabled
+	Token     string        `json:"token,omitempty"` // Current auth token (only shown to owner)
 	Devices   []DeviceBrief `json:"devices,omitempty"`
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+// CardToken represents an authentication token for a card
+type CardToken struct {
+	ID        uuid.UUID  `json:"id"`
+	CardID    uuid.UUID  `json:"card_id"`
+	Token     string     `json:"token"`
+	IsCurrent bool       `json:"is_current"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // DeviceBrief - короткий опис пристрою для зв'язку з карткою

@@ -78,13 +78,37 @@ func generateRandomHex(length int) string {
 // ==================== Cards ====================
 
 func (db *DB) CreateCard(ctx context.Context, card *models.Card) error {
+	// Start transaction
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Insert card
 	query := `
 		INSERT INTO cards (card_uid, card_type, name, status)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at
 	`
-	return db.Pool.QueryRow(ctx, query, card.CardUID, card.CardType, card.Name, card.Status).
+	err = tx.QueryRow(ctx, query, card.CardUID, card.CardType, card.Name, card.Status).
 		Scan(&card.ID, &card.CreatedAt, &card.UpdatedAt)
+	if err != nil {
+		return err
+	}
+
+	// Create initial token for the card
+	token := generateRandomHex(64)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO card_tokens (card_id, token, is_current)
+		VALUES ($1, $2, TRUE)
+	`, card.ID, token)
+	if err != nil {
+		return err
+	}
+	card.Token = token
+
+	return tx.Commit(ctx)
 }
 
 func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, error) {
@@ -392,5 +416,129 @@ func (db *DB) GetAccessLogsByCardUID(ctx context.Context, cardUID string, limit 
 		logs = append(logs, log)
 	}
 	return logs, nil
+}
+
+// ==================== Card Token Management ====================
+
+// GenerateCardToken generates a new 64-char hex token
+func GenerateCardToken() string {
+	return generateRandomHex(64)
+}
+
+// CreateCardToken creates a new token for a card
+// If rotateOld is true, marks the old current token as non-current with expiry
+func (db *DB) CreateCardToken(ctx context.Context, cardID uuid.UUID, rotateOld bool) (string, error) {
+	token := GenerateCardToken()
+
+	// Start transaction
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	if rotateOld {
+		// Mark old current tokens as non-current with 24h expiry
+		_, err = tx.Exec(ctx, `
+			UPDATE card_tokens 
+			SET is_current = FALSE, expires_at = NOW() + INTERVAL '24 hours'
+			WHERE card_id = $1 AND is_current = TRUE
+		`, cardID)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Insert new token
+	_, err = tx.Exec(ctx, `
+		INSERT INTO card_tokens (card_id, token, is_current)
+		VALUES ($1, $2, TRUE)
+	`, cardID, token)
+	if err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+// GetCurrentCardToken returns the current token for a card
+func (db *DB) GetCurrentCardToken(ctx context.Context, cardID uuid.UUID) (string, error) {
+	var token string
+	err := db.Pool.QueryRow(ctx, `
+		SELECT token FROM card_tokens 
+		WHERE card_id = $1 AND is_current = TRUE
+		LIMIT 1
+	`, cardID).Scan(&token)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// GetCardByToken returns a card by its token (current or valid old token)
+func (db *DB) GetCardByToken(ctx context.Context, token string) (*models.Card, bool, error) {
+	var cardID uuid.UUID
+	var isCurrent bool
+
+	// Find token (must be current OR not expired)
+	err := db.Pool.QueryRow(ctx, `
+		SELECT card_id, is_current FROM card_tokens 
+		WHERE token = $1 AND (is_current = TRUE OR expires_at > NOW())
+		LIMIT 1
+	`, token).Scan(&cardID, &isCurrent)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Get the card
+	card, err := db.GetCardByID(ctx, cardID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return card, isCurrent, nil
+}
+
+// PromoteCardToken marks a token as current and removes old tokens
+// Used when old token is successfully used - promotes it to be the only current
+func (db *DB) PromoteCardToken(ctx context.Context, token string) error {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Get card_id for this token
+	var cardID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT card_id FROM card_tokens WHERE token = $1`, token).Scan(&cardID)
+	if err != nil {
+		return err
+	}
+
+	// Delete all other tokens for this card
+	_, err = tx.Exec(ctx, `DELETE FROM card_tokens WHERE card_id = $1 AND token != $2`, cardID, token)
+	if err != nil {
+		return err
+	}
+
+	// Mark this token as current
+	_, err = tx.Exec(ctx, `UPDATE card_tokens SET is_current = TRUE, expires_at = NULL WHERE token = $1`, token)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+// CleanupExpiredCardTokens removes expired non-current tokens
+func (db *DB) CleanupExpiredCardTokens(ctx context.Context) error {
+	_, err := db.Pool.Exec(ctx, `
+		DELETE FROM card_tokens WHERE is_current = FALSE AND expires_at < NOW()
+	`)
+	return err
 }
 

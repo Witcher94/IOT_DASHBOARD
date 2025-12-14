@@ -131,9 +131,24 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			card_uid VARCHAR(64) UNIQUE NOT NULL,
 			status VARCHAR(32) DEFAULT 'pending',
+			name VARCHAR(255),
+			card_type VARCHAR(32),
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		)`,
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS name VARCHAR(255)`,
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS card_type VARCHAR(32)`,
+		// Card tokens for authentication (supports token rotation)
+		`CREATE TABLE IF NOT EXISTS card_tokens (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+			token VARCHAR(64) NOT NULL UNIQUE,
+			is_current BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			expires_at TIMESTAMP WITH TIME ZONE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_card_tokens_card_id ON card_tokens(card_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_card_tokens_token ON card_tokens(token)`,
 		// Card-Device links (now references devices table, not access_devices)
 		`CREATE TABLE IF NOT EXISTS card_devices (
 			card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,

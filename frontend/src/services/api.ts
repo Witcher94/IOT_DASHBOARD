@@ -259,6 +259,12 @@ export const skudApi = {
     return data;
   },
 
+  // Regenerate card token
+  regenerateCardToken: async (cardId: string): Promise<{ token: string; message: string }> => {
+    const { data } = await api.post(`/skud/cards/${cardId}/token`);
+    return data;
+  },
+
   // Access Logs
   getAccessLogs: async (filters?: {
     action?: string;

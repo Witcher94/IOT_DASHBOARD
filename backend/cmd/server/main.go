@@ -195,6 +195,7 @@ func main() {
 			skud.PUT("/cards/:id", skudHandler.UpdateCard)
 			skud.PATCH("/cards/:id/status", skudHandler.UpdateCardStatus)
 			skud.DELETE("/cards/:id", skudHandler.DeleteCard)
+			skud.POST("/cards/:id/token", skudHandler.RegenerateCardToken) // Regenerate card token
 
 			// Card-Device links
 			skud.POST("/cards/:id/devices/:device_id", skudHandler.LinkCardToDevice)
