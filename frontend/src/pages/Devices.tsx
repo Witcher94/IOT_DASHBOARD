@@ -29,10 +29,17 @@ export default function Devices() {
     queryFn: devicesApi.getAll,
   });
 
-  // Load initial metrics for each device
+  // Shared devices (devices shared with current user)
+  const { data: sharedDevices } = useQuery({
+    queryKey: ['shared-devices'],
+    queryFn: devicesApi.getSharedWithMe,
+  });
+
+  // Load initial metrics for each device (including shared)
   useEffect(() => {
-    if (devices && devices.length > 0) {
-      devices.forEach(async (device) => {
+    const allDevices = [...(devices || []), ...(sharedDevices || [])];
+    if (allDevices.length > 0) {
+      allDevices.forEach(async (device) => {
         try {
           const metrics = await metricsApi.getByDeviceId(device.id, 1);
           if (metrics && metrics.length > 0) {
@@ -52,7 +59,7 @@ export default function Devices() {
         }
       });
     }
-  }, [devices]);
+  }, [devices, sharedDevices]);
 
   const createMutation = useMutation({
     mutationFn: devicesApi.create,
@@ -197,6 +204,36 @@ export default function Devices() {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Shared Devices Section */}
+      {sharedDevices && sharedDevices.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold mb-4 text-dark-300 flex items-center gap-2">
+            <span className="text-primary-400">👥</span>
+            Shared with me
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {sharedDevices.map((device, index) => (
+              <motion.div
+                key={device.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <DeviceCard
+                  device={device}
+                  isOnline={device.is_online}
+                  showActions={false}
+                  temperature={deviceMetrics[device.id]?.temperature}
+                  humidity={deviceMetrics[device.id]?.humidity}
+                  rssi={deviceMetrics[device.id]?.rssi}
+                  freeHeap={deviceMetrics[device.id]?.freeHeap}
+                />
+              </motion.div>
+            ))}
+          </div>
         </div>
       )}
 
