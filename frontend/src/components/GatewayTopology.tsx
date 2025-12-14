@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { gatewayApi, metricsApi } from '../services/api';
 import type { GatewayTopology, Device } from '../types';
-import { Cpu, Wifi, Activity, RefreshCw, Power, Thermometer, HardDrive, ExternalLink } from 'lucide-react';
+import { Cpu, Wifi, Activity, RefreshCw, Power, Thermometer, HardDrive, Server, Radio } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'react-hot-toast';
@@ -15,10 +15,9 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
   const { data: topology, isLoading, refetch } = useQuery({
     queryKey: ['gateway-topology', gatewayId],
     queryFn: () => gatewayApi.getTopology(gatewayId),
-    refetchInterval: 10000, // Refresh every 10s
+    refetchInterval: 10000,
   });
 
-  // Get latest gateway metrics for CPU, Memory, Temp
   const { data: gatewayMetrics } = useQuery({
     queryKey: ['gateway-metrics', gatewayId],
     queryFn: () => metricsApi.getByDeviceId(gatewayId, 1),
@@ -31,7 +30,7 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
   const handleCommand = async (nodeId: string, command: string) => {
     try {
       await gatewayApi.sendCommandToNode(gatewayId, nodeId, { command });
-      toast.success(`Command "${command}" sent to node`);
+      toast.success(`Command "${command}" sent`);
       setTimeout(() => refetch(), 1000);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to send command');
@@ -50,65 +49,74 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
     return <div className="text-dark-400">Failed to load topology</div>;
   }
 
+  // Find bridge node (first node, usually ESP32 connected via serial)
+  const bridgeNode = topology.mesh_nodes.find(n => 
+    n.name?.toLowerCase().includes('bridge') || 
+    n.mesh_node_id === topology.mesh_nodes[0]?.mesh_node_id
+  ) || topology.mesh_nodes[0];
+  
+  // Other mesh nodes (excluding bridge)
+  const meshNodes = topology.mesh_nodes.filter(n => n.id !== bridgeNode?.id);
+
   return (
     <div className="space-y-6">
-      {/* Gateway Health */}
+      {/* Gateway Health Stats */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-dark-800 rounded-xl p-6 border border-dark-700"
+        className="bg-dark-800/50 backdrop-blur rounded-2xl p-6 border border-dark-700/50"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-primary flex items-center gap-2">
-            <Cpu className="w-5 h-5" />
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Server className="w-5 h-5 text-primary" />
             Gateway Health
           </h3>
           <button
             onClick={() => refetch()}
-            className="p-2 hover:bg-dark-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-dark-700 rounded-lg transition-colors text-dark-400 hover:text-white"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div>
-            <div className="text-sm text-dark-400 mb-1">Status</div>
-            <div className={`text-lg font-semibold ${topology.gateway.is_online ? 'text-success' : 'text-danger'}`}>
-              {topology.gateway.is_online ? '🟢 Online' : '🔴 Offline'}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="bg-dark-900/50 rounded-xl p-3">
+            <div className="text-xs text-dark-400 mb-1">Status</div>
+            <div className={`text-base font-semibold ${topology.gateway.is_online ? 'text-green-400' : 'text-red-400'}`}>
+              {topology.gateway.is_online ? '● Online' : '○ Offline'}
             </div>
           </div>
-          <div>
-            <div className="text-sm text-dark-400 mb-1 flex items-center gap-1">
+          <div className="bg-dark-900/50 rounded-xl p-3">
+            <div className="text-xs text-dark-400 mb-1 flex items-center gap-1">
               <Cpu className="w-3 h-3" /> CPU
             </div>
-            <div className="text-lg font-semibold text-primary">
-              {latestMetric?.free_heap ? `${(latestMetric.free_heap / 10).toFixed(1)}%` : '--'}
+            <div className="text-base font-semibold text-cyan-400">
+              {latestMetric?.free_heap ? `${(latestMetric.free_heap / 10).toFixed(0)}%` : '--'}
             </div>
           </div>
-          <div>
-            <div className="text-sm text-dark-400 mb-1 flex items-center gap-1">
-              <HardDrive className="w-3 h-3" /> Memory
+          <div className="bg-dark-900/50 rounded-xl p-3">
+            <div className="text-xs text-dark-400 mb-1 flex items-center gap-1">
+              <HardDrive className="w-3 h-3" /> RAM
             </div>
-            <div className="text-lg font-semibold text-primary">
-              {latestMetric?.humidity ? `${latestMetric.humidity.toFixed(1)}%` : '--'}
+            <div className="text-base font-semibold text-blue-400">
+              {latestMetric?.humidity ? `${latestMetric.humidity.toFixed(0)}%` : '--'}
             </div>
           </div>
-          <div>
-            <div className="text-sm text-dark-400 mb-1 flex items-center gap-1">
-              <Thermometer className="w-3 h-3" /> CPU Temp
+          <div className="bg-dark-900/50 rounded-xl p-3">
+            <div className="text-xs text-dark-400 mb-1 flex items-center gap-1">
+              <Thermometer className="w-3 h-3" /> Temp
             </div>
-            <div className="text-lg font-semibold text-orange-400">
+            <div className="text-base font-semibold text-orange-400">
               {latestMetric?.temperature ? `${Math.round(latestMetric.temperature)}°C` : '--'}
             </div>
           </div>
-          <div>
-            <div className="text-sm text-dark-400 mb-1">Mesh Nodes</div>
-            <div className="text-lg font-semibold text-primary">
+          <div className="bg-dark-900/50 rounded-xl p-3">
+            <div className="text-xs text-dark-400 mb-1">Nodes</div>
+            <div className="text-base font-semibold text-purple-400">
               {topology.online_nodes}/{topology.total_nodes}
             </div>
           </div>
-          <div>
-            <div className="text-sm text-dark-400 mb-1">Last Seen</div>
+          <div className="bg-dark-900/50 rounded-xl p-3">
+            <div className="text-xs text-dark-400 mb-1">Last Seen</div>
             <div className="text-sm text-dark-300">
               {topology.gateway.last_seen
                 ? formatDistanceToNow(new Date(topology.gateway.last_seen), { addSuffix: true })
@@ -118,135 +126,200 @@ export default function GatewayTopology({ gatewayId }: GatewayTopologyProps) {
         </div>
       </motion.div>
 
-      {/* Tree Topology */}
+      {/* Mesh Topology Visualization */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-dark-800 rounded-xl p-6 border border-dark-700"
+        className="bg-dark-800/50 backdrop-blur rounded-2xl p-6 border border-dark-700/50 overflow-hidden"
       >
-        <h3 className="text-lg font-semibold text-primary mb-6 flex items-center gap-2">
-          <Wifi className="w-5 h-5" />
+        <h3 className="text-lg font-semibold text-white mb-8 flex items-center gap-2">
+          <Radio className="w-5 h-5 text-primary" />
           Mesh Network Topology
         </h3>
 
-        {/* Gateway (Root) */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="relative">
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              className={`bg-gradient-to-br ${
-                topology.gateway.is_online
-                  ? 'from-primary/20 to-primary/10 border-primary'
-                  : 'from-dark-700 to-dark-800 border-dark-600'
-              } border-2 rounded-xl p-4 min-w-[200px] text-center`}
-            >
-              <Cpu className="w-8 h-8 mx-auto mb-2 text-primary" />
-              <div className="font-semibold text-dark-100">{topology.gateway.name}</div>
-              <div className="text-xs text-dark-400 mt-1">Gateway</div>
-              <div className={`text-xs mt-2 ${topology.gateway.is_online ? 'text-success' : 'text-danger'}`}>
-                {topology.gateway.is_online ? '🟢 Online' : '🔴 Offline'}
+        {/* Topology Tree */}
+        <div className="relative min-h-[400px]">
+          {/* SVG for connection lines */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#4B5563" />
+              </marker>
+            </defs>
+            {/* Gateway to Bridge line */}
+            {bridgeNode && (
+              <line 
+                x1="50%" y1="80" x2="50%" y2="160" 
+                stroke="#4B5563" strokeWidth="2" 
+                markerEnd="url(#arrowhead)"
+              />
+            )}
+            {/* Bridge to Mesh nodes lines */}
+            {meshNodes.length > 0 && (
+              <line 
+                x1="50%" y1="240" x2="50%" y2="300" 
+                stroke="#4B5563" strokeWidth="2" 
+                markerEnd="url(#arrowhead)"
+              />
+            )}
+          </svg>
+
+          {/* Gateway Node (RPi) */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative flex justify-center mb-8"
+            style={{ zIndex: 1 }}
+          >
+            <div className={`
+              bg-gradient-to-br from-slate-100 to-slate-200 
+              border-2 ${topology.gateway.is_online ? 'border-green-500' : 'border-gray-400'}
+              rounded-xl px-8 py-4 min-w-[180px] text-center shadow-xl
+            `}>
+              <Server className="w-8 h-8 mx-auto mb-2 text-slate-700" />
+              <div className="font-bold text-slate-800 text-lg">{topology.gateway.name}</div>
+              <div className="text-xs text-slate-500 mt-1">Raspberry Pi Gateway</div>
+              <div className={`text-xs mt-2 font-medium ${topology.gateway.is_online ? 'text-green-600' : 'text-red-500'}`}>
+                {topology.gateway.is_online ? '● Online' : '○ Offline'}
               </div>
+            </div>
+          </motion.div>
+
+          {/* Bridge Node (ESP32 connected via USB) */}
+          {bridgeNode && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.15 }}
+              className="relative flex justify-center mb-8"
+              style={{ zIndex: 1 }}
+            >
+              <Link to={`/devices/${bridgeNode.id}`}>
+                <motion.div
+                  whileHover={{ scale: 1.03 }}
+                  className={`
+                    bg-gradient-to-br from-dark-700 to-dark-800
+                    border-2 ${bridgeNode.is_online ? 'border-cyan-500' : 'border-dark-600'}
+                    rounded-xl px-8 py-4 min-w-[160px] text-center shadow-xl cursor-pointer
+                    hover:shadow-cyan-500/20 transition-shadow
+                  `}
+                >
+                  <Wifi className="w-7 h-7 mx-auto mb-2 text-cyan-400" />
+                  <div className="font-semibold text-white">{bridgeNode.name || 'Bridge'}</div>
+                  <div className="text-xs text-dark-400 mt-1">ESP32 Bridge</div>
+                  <div className={`text-xs mt-2 ${bridgeNode.is_online ? 'text-cyan-400' : 'text-dark-500'}`}>
+                    {bridgeNode.is_online ? '● Online' : '○ Offline'}
+                  </div>
+                </motion.div>
+              </Link>
             </motion.div>
-          </div>
-
-          {/* Connection Line */}
-          {topology.mesh_nodes.length > 0 && (
-            <div className="w-0.5 h-8 bg-dark-600 my-2" />
           )}
-        </div>
 
-        {/* Mesh Nodes */}
-        {topology.mesh_nodes.length > 0 ? (
-          <div className="flex justify-center">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {topology.mesh_nodes.map((node: Device, index: number) => (
+          {/* Mesh Nodes Row */}
+          {meshNodes.length > 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+              className="relative flex justify-center gap-4 flex-wrap"
+              style={{ zIndex: 1 }}
+            >
+              {/* Horizontal connection line between mesh nodes */}
+              {meshNodes.length > 1 && (
+                <div className="absolute top-1/2 left-1/4 right-1/4 h-0.5 bg-dark-600 -translate-y-1/2" style={{ zIndex: 0 }} />
+              )}
+              
+              {meshNodes.map((node: Device, index: number) => (
                 <motion.div
                   key={node.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 + index * 0.05 }}
-                  className="relative w-[220px]"
+                  transition={{ delay: 0.3 + index * 0.1 }}
+                  className="relative"
                 >
-                  {/* Connection Line */}
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-0.5 h-4 bg-dark-600" />
-                  
                   <Link to={`/devices/${node.id}`}>
                     <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      className={`bg-gradient-to-br ${
-                        node.is_online
-                          ? 'from-success/20 to-success/10 border-success'
-                          : 'from-dark-700 to-dark-800 border-dark-600'
-                      } border-2 rounded-xl p-4 cursor-pointer group relative`}
+                      whileHover={{ scale: 1.05 }}
+                      className={`
+                        bg-gradient-to-br from-dark-700 to-dark-800
+                        border-2 ${node.is_online ? 'border-green-500' : 'border-dark-600'}
+                        rounded-xl px-6 py-4 min-w-[140px] text-center shadow-lg cursor-pointer
+                        hover:shadow-green-500/20 transition-shadow
+                      `}
                     >
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <ExternalLink className="w-4 h-4 text-dark-400" />
+                      <Activity className={`w-6 h-6 mx-auto mb-2 ${node.is_online ? 'text-green-400' : 'text-dark-500'}`} />
+                      <div className="font-semibold text-white text-sm">{node.name}</div>
+                      <div className="text-xs text-dark-400 mt-1">
+                        {node.platform || 'ESP'} Node
                       </div>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Activity className={`w-5 h-5 ${node.is_online ? 'text-success' : 'text-dark-500'}`} />
-                          <div>
-                            <div className="font-semibold text-dark-100">{node.name}</div>
-                            <div className="text-xs text-dark-400">
-                              Node {node.mesh_node_id || 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-                        <div className={`text-xs ${node.is_online ? 'text-success' : 'text-danger'}`}>
-                          {node.is_online ? '🟢' : '🔴'}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                        <div>
-                          <div className="text-dark-400">Platform</div>
-                          <div className="text-dark-300">{node.platform || 'N/A'}</div>
-                        </div>
-                        <div>
-                          <div className="text-dark-400">Firmware</div>
-                          <div className="text-dark-300">{node.firmware || 'N/A'}</div>
-                        </div>
+                      <div className={`text-xs mt-2 ${node.is_online ? 'text-green-400' : 'text-dark-500'}`}>
+                        {node.is_online ? '● Online' : '○ Offline'}
                       </div>
                     </motion.div>
                   </Link>
-
-                  <div className="flex gap-2 mt-2">
+                  
+                  {/* Quick actions */}
+                  <div className="flex gap-1 mt-2 justify-center">
                     <button
-                      onClick={(e) => { e.preventDefault(); handleCommand(node.id, 'status'); }}
-                      className="flex-1 px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                      onClick={() => handleCommand(node.id, 'status')}
+                      className="p-1.5 bg-dark-700 hover:bg-dark-600 rounded-lg transition-colors"
+                      title="Refresh"
                     >
-                      <RefreshCw className="w-3 h-3" />
-                      Refresh
+                      <RefreshCw className="w-3 h-3 text-dark-400" />
                     </button>
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (confirm(`Reboot node "${node.name}"?`)) {
+                      onClick={() => {
+                        if (confirm(`Reboot "${node.name}"?`)) {
                           handleCommand(node.id, 'reboot');
                         }
                       }}
-                      className="flex-1 px-3 py-1.5 bg-danger/20 hover:bg-danger/30 text-danger rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                      className="p-1.5 bg-dark-700 hover:bg-red-500/20 rounded-lg transition-colors"
+                      title="Reboot"
                     >
-                      <Power className="w-3 h-3" />
-                      Reboot
+                      <Power className="w-3 h-3 text-dark-400 hover:text-red-400" />
                     </button>
                   </div>
                 </motion.div>
               ))}
+            </motion.div>
+          ) : !bridgeNode ? (
+            <div className="text-center py-12 text-dark-400">
+              <Wifi className="w-16 h-16 mx-auto mb-4 opacity-30" />
+              <p className="text-lg">No mesh nodes connected</p>
+              <p className="text-sm text-dark-500 mt-2">
+                Connect ESP32/ESP8266 nodes to see them here
+              </p>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Legend */}
+        <div className="mt-8 pt-4 border-t border-dark-700/50">
+          <div className="flex flex-wrap gap-6 justify-center text-xs text-dark-400">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+              <span>Online</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-dark-600" />
+              <span>Offline</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Server className="w-4 h-4 text-slate-400" />
+              <span>Gateway (RPi)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Wifi className="w-4 h-4 text-cyan-400" />
+              <span>Bridge (ESP32)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-green-400" />
+              <span>Mesh Node</span>
             </div>
           </div>
-        ) : (
-          <div className="text-center py-12 text-dark-400">
-            <Wifi className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No mesh nodes connected</p>
-            <p className="text-sm text-dark-500 mt-2">
-              Connect ESP32/ESP8266 nodes to see them here
-            </p>
-          </div>
-        )}
+        </div>
       </motion.div>
     </div>
   );
 }
-
