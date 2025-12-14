@@ -282,10 +282,12 @@ type AccessDevice struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// AccessVerifyRequest запит на верифікацію доступу
+// AccessVerifyRequest запит на верифікацію доступу (з replay protection)
 type AccessVerifyRequest struct {
-	CardUID  string `json:"card_uid" binding:"required"`
-	CardType string `json:"card_type"`
+	CardUID   string `json:"card_uid" binding:"required"`
+	CardType  string `json:"card_type"`
+	Nonce     string `json:"nonce" binding:"required"`     // Random 32-char hex string
+	Timestamp int64  `json:"timestamp" binding:"required"` // Unix timestamp
 }
 
 // AccessVerifyResponse відповідь на верифікацію
@@ -293,10 +295,12 @@ type AccessVerifyResponse struct {
 	Access bool `json:"access"`
 }
 
-// AccessRegisterRequest запит на реєстрацію нової картки
+// AccessRegisterRequest запит на реєстрацію нової картки (з replay protection)
 type AccessRegisterRequest struct {
-	CardUID  string `json:"card_uid" binding:"required"`
-	CardType string `json:"card_type"`
+	CardUID   string `json:"card_uid" binding:"required"`
+	CardType  string `json:"card_type"`
+	Nonce     string `json:"nonce" binding:"required"`     // Random 32-char hex string
+	Timestamp int64  `json:"timestamp" binding:"required"` // Unix timestamp
 }
 
 // AccessRegisterResponse відповідь на реєстрацію

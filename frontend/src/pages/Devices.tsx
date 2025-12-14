@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Cpu, Search, X, Copy, Check, RefreshCw, CreditCard, Trash2 } from 'lucide-react';
+import { Plus, Cpu, Search, X, Copy, Check, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { devicesApi, metricsApi, skudApi } from '../services/api';
+import { devicesApi, metricsApi } from '../services/api';
 import { useTranslation } from '../contexts/settingsStore';
 import DeviceCard from '../components/DeviceCard';
 
@@ -22,11 +22,6 @@ export default function Devices() {
   const [copiedToken, setCopiedToken] = useState(false);
   const [search, setSearch] = useState('');
   const [deviceMetrics, setDeviceMetrics] = useState<Record<string, DeviceMetrics>>({});
-  // SKUD devices
-  const [showSkudModal, setShowSkudModal] = useState(false);
-  const [newSkudDeviceId, setNewSkudDeviceId] = useState('');
-  const [newSkudSecretKey, setNewSkudSecretKey] = useState('');
-  const [newSkudDeviceName, setNewSkudDeviceName] = useState('');
   const queryClient = useQueryClient();
 
   const { data: devices, isLoading } = useQuery({
@@ -88,44 +83,6 @@ export default function Devices() {
       toast.error(t.error);
     },
   });
-
-  // SKUD Devices
-  const { data: skudDevices } = useQuery({
-    queryKey: ['skud-devices'],
-    queryFn: skudApi.getAccessDevices,
-  });
-
-  const createSkudDeviceMutation = useMutation({
-    mutationFn: skudApi.createAccessDevice,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['skud-devices'] });
-      setShowSkudModal(false);
-      setNewSkudDeviceId('');
-      setNewSkudSecretKey('');
-      setNewSkudDeviceName('');
-      toast.success(t.deviceCreatedSkud);
-    },
-    onError: () => toast.error(t.error),
-  });
-
-  const deleteSkudDeviceMutation = useMutation({
-    mutationFn: skudApi.deleteAccessDevice,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['skud-devices'] });
-      toast.success(t.delete);
-    },
-    onError: () => toast.error(t.error),
-  });
-
-  const handleCreateSkudDevice = () => {
-    if (newSkudDeviceId.trim() && newSkudSecretKey.trim()) {
-      createSkudDeviceMutation.mutate({
-        device_id: newSkudDeviceId.trim(),
-        secret_key: newSkudSecretKey.trim(),
-        name: newSkudDeviceName.trim() || undefined,
-      });
-    }
-  };
 
   const handleCreate = () => {
     if (newDeviceName.trim()) {
@@ -280,64 +237,6 @@ export default function Devices() {
         </div>
       )}
 
-      {/* SKUD Access Devices Section */}
-      <div className="mt-10 pt-8 border-t border-dark-700/50">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold flex items-center gap-3">
-            <CreditCard className="w-6 h-6 text-primary-400" />
-            <span>{t.accessDevices}</span>
-          </h2>
-          <button
-            onClick={() => setShowSkudModal(true)}
-            className="btn-secondary flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            {t.addAccessDevice}
-          </button>
-        </div>
-
-        {skudDevices && skudDevices.length > 0 ? (
-          <div className="glass rounded-xl overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-dark-700/50">
-                  <th className="text-left px-6 py-4 text-sm font-semibold text-dark-300">{t.deviceId}</th>
-                  <th className="text-left px-6 py-4 text-sm font-semibold text-dark-300">{t.secretKey}</th>
-                  <th className="text-left px-6 py-4 text-sm font-semibold text-dark-300">Name</th>
-                  <th className="px-6 py-4"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {skudDevices.map((device) => (
-                  <tr key={device.id} className="border-b border-dark-700/30 hover:bg-dark-800/30">
-                    <td className="px-6 py-4 font-mono text-sm">{device.device_id}</td>
-                    <td className="px-6 py-4 font-mono text-sm text-dark-400">{device.secret_key}</td>
-                    <td className="px-6 py-4 text-sm">{device.name || '-'}</td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => {
-                          if (confirm(t.confirm + '?')) {
-                            deleteSkudDeviceMutation.mutate(device.id);
-                          }
-                        }}
-                        className="p-2 rounded-lg text-dark-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-12 glass rounded-xl">
-            <CreditCard className="w-12 h-12 text-dark-500 mx-auto mb-3" />
-            <p className="text-dark-300">{t.noAccessDevices}</p>
-          </div>
-        )}
-      </div>
-
       {/* Add Device Modal */}
       <AnimatePresence>
         {showAddModal && (
@@ -429,84 +328,6 @@ export default function Devices() {
                   </button>
                 </>
               )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Add SKUD Device Modal */}
-      <AnimatePresence>
-        {showSkudModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-            onClick={() => setShowSkudModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md glass rounded-2xl p-6"
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold">{t.addAccessDevice}</h2>
-                <button
-                  onClick={() => setShowSkudModal(false)}
-                  className="p-2 rounded-lg hover:bg-dark-700 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4 mb-6">
-                <div>
-                  <label className="block text-sm text-dark-400 mb-2">{t.deviceId} *</label>
-                  <input
-                    type="text"
-                    placeholder="0000E8BA66F4E9D4"
-                    value={newSkudDeviceId}
-                    onChange={(e) => setNewSkudDeviceId(e.target.value)}
-                    className="input-field font-mono"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-dark-400 mb-2">{t.secretKey} *</label>
-                  <input
-                    type="text"
-                    placeholder="FIRST_ESP_SECRET"
-                    value={newSkudSecretKey}
-                    onChange={(e) => setNewSkudSecretKey(e.target.value)}
-                    className="input-field font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-dark-400 mb-2">Name (optional)</label>
-                  <input
-                    type="text"
-                    placeholder="Main Entrance Reader"
-                    value={newSkudDeviceName}
-                    onChange={(e) => setNewSkudDeviceName(e.target.value)}
-                    className="input-field"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={() => setShowSkudModal(false)} className="btn-secondary flex-1">
-                  {t.cancel}
-                </button>
-                <button
-                  onClick={handleCreateSkudDevice}
-                  disabled={!newSkudDeviceId.trim() || !newSkudSecretKey.trim() || createSkudDeviceMutation.isPending}
-                  className="btn-primary flex-1 disabled:opacity-50"
-                >
-                  {createSkudDeviceMutation.isPending ? t.loading : t.addAccessDevice}
-                </button>
-              </div>
             </motion.div>
           </motion.div>
         )}

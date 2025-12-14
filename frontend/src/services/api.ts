@@ -11,9 +11,7 @@ import type {
   CreateCommandRequest,
   GatewayTopology,
   Card,
-  AccessDevice,
   AccessLog,
-  CreateAccessDeviceRequest,
   UpdateCardStatusRequest,
 } from '../types';
 
@@ -218,22 +216,9 @@ export interface LogEntry {
 }
 
 // SKUD (Access Control)
+// Note: Access devices are now created via the regular Devices page.
+// SKUD uses the same X-Device-Token as IoT devices.
 export const skudApi = {
-  // Access Devices
-  getAccessDevices: async (): Promise<AccessDevice[]> => {
-    const { data } = await api.get('/skud/devices');
-    return data || [];
-  },
-
-  createAccessDevice: async (req: CreateAccessDeviceRequest): Promise<AccessDevice> => {
-    const { data } = await api.post('/skud/devices', req);
-    return data;
-  },
-
-  deleteAccessDevice: async (id: string): Promise<void> => {
-    await api.delete(`/skud/devices/${id}`);
-  },
-
   // Cards
   getCards: async (status?: string): Promise<Card[]> => {
     const params = status ? { status } : {};

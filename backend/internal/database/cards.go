@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -9,89 +10,37 @@ import (
 	"github.com/pfaka/iot-dashboard/internal/models"
 )
 
-// ==================== Access Devices ====================
+// ==================== Nonce Management (Replay Attack Protection) ====================
 
-func (db *DB) CreateAccessDevice(ctx context.Context, device *models.AccessDevice) error {
-	query := `
-		INSERT INTO access_devices (device_id, secret_key, name)
+// CheckAndStoreNonce checks if nonce was used and stores it if not
+// Returns error if nonce was already used or timestamp is too old
+func (db *DB) CheckAndStoreNonce(ctx context.Context, deviceID uuid.UUID, nonce string, timestamp int64) error {
+	// Check timestamp validity (allow 5 minute window)
+	now := time.Now().Unix()
+	maxAge := int64(300) // 5 minutes
+
+	if timestamp < now-maxAge || timestamp > now+60 {
+		return fmt.Errorf("timestamp out of valid range")
+	}
+
+	// Try to insert nonce (will fail if duplicate due to unique index)
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO access_nonces (device_id, nonce, timestamp)
 		VALUES ($1, $2, $3)
-		RETURNING id, created_at
-	`
-	return db.Pool.QueryRow(ctx, query, device.DeviceID, device.SecretKey, device.Name).
-		Scan(&device.ID, &device.CreatedAt)
-}
+	`, deviceID, nonce, timestamp)
 
-func (db *DB) GetAccessDeviceByID(ctx context.Context, id uuid.UUID) (*models.AccessDevice, error) {
-	query := `
-		SELECT id, device_id, secret_key, COALESCE(name, ''), created_at
-		FROM access_devices WHERE id = $1
-	`
-	device := &models.AccessDevice{}
-	err := db.Pool.QueryRow(ctx, query, id).Scan(
-		&device.ID, &device.DeviceID, &device.SecretKey, &device.Name, &device.CreatedAt,
-	)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("nonce already used or invalid")
 	}
-	return device, nil
+
+	return nil
 }
 
-func (db *DB) GetAccessDeviceByDeviceID(ctx context.Context, deviceID string) (*models.AccessDevice, error) {
-	query := `
-		SELECT id, device_id, secret_key, COALESCE(name, ''), created_at
-		FROM access_devices WHERE device_id = $1
-	`
-	device := &models.AccessDevice{}
-	err := db.Pool.QueryRow(ctx, query, deviceID).Scan(
-		&device.ID, &device.DeviceID, &device.SecretKey, &device.Name, &device.CreatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return device, nil
-}
-
-func (db *DB) GetAccessDeviceByCredentials(ctx context.Context, deviceID, secretKey string) (*models.AccessDevice, error) {
-	query := `
-		SELECT id, device_id, secret_key, COALESCE(name, ''), created_at
-		FROM access_devices WHERE device_id = $1 AND secret_key = $2
-	`
-	device := &models.AccessDevice{}
-	err := db.Pool.QueryRow(ctx, query, deviceID, secretKey).Scan(
-		&device.ID, &device.DeviceID, &device.SecretKey, &device.Name, &device.CreatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return device, nil
-}
-
-func (db *DB) GetAllAccessDevices(ctx context.Context) ([]models.AccessDevice, error) {
-	query := `
-		SELECT id, device_id, secret_key, COALESCE(name, ''), created_at
-		FROM access_devices ORDER BY created_at DESC
-	`
-	rows, err := db.Pool.Query(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var devices []models.AccessDevice
-	for rows.Next() {
-		var device models.AccessDevice
-		if err := rows.Scan(
-			&device.ID, &device.DeviceID, &device.SecretKey, &device.Name, &device.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		devices = append(devices, device)
-	}
-	return devices, nil
-}
-
-func (db *DB) DeleteAccessDevice(ctx context.Context, id uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM access_devices WHERE id = $1", id)
+// CleanupOldNonces removes nonces older than 10 minutes
+func (db *DB) CleanupOldNonces(ctx context.Context) error {
+	_, err := db.Pool.Exec(ctx, `
+		DELETE FROM access_nonces WHERE created_at < NOW() - INTERVAL '10 minutes'
+	`)
 	return err
 }
 
@@ -236,10 +185,11 @@ func (db *DB) UnlinkCardFromDevice(ctx context.Context, cardID, deviceID uuid.UU
 }
 
 func (db *DB) GetCardDevices(ctx context.Context, cardID uuid.UUID) ([]models.DeviceBrief, error) {
+	// Now using devices table instead of access_devices
 	query := `
-		SELECT ad.id, ad.device_id, COALESCE(ad.name, ad.device_id)
-		FROM access_devices ad
-		INNER JOIN card_devices cd ON cd.device_id = ad.id
+		SELECT d.id, d.id::text, d.name
+		FROM devices d
+		INNER JOIN card_devices cd ON cd.device_id = d.id
 		WHERE cd.card_id = $1
 	`
 	rows, err := db.Pool.Query(ctx, query, cardID)

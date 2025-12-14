@@ -173,13 +173,9 @@ func main() {
 		}
 
 		// SKUD (Access Control) routes - protected (requires auth)
+		// Note: SKUD devices are now created via regular Devices page
 		skud := protected.Group("/skud")
 		{
-			// Access devices management
-			skud.GET("/devices", skudHandler.GetAccessDevices)
-			skud.POST("/devices", skudHandler.CreateAccessDevice)
-			skud.DELETE("/devices/:id", skudHandler.DeleteAccessDevice)
-
 			// Cards management
 			skud.GET("/cards", skudHandler.GetCards)
 			skud.GET("/cards/:id", skudHandler.GetCard)
@@ -191,7 +187,7 @@ func main() {
 		}
 	}
 
-	// SKUD ESP device endpoints (device auth via X-Device-ID and X-API-Key headers)
+	// SKUD ESP device endpoints (device auth via X-Device-Token + nonce/timestamp for replay protection)
 	skudApi := v1.Group("/access")
 	{
 		skudApi.POST("/verify", skudHandler.VerifyAccess)

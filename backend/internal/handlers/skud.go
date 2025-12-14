@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -18,75 +20,36 @@ type SKUDHandler struct {
 }
 
 func NewSKUDHandler(db *database.DB, hub *websocket.Hub) *SKUDHandler {
-	return &SKUDHandler{db: db, hub: hub}
+	handler := &SKUDHandler{db: db, hub: hub}
+	// Start background nonce cleanup
+	go handler.startNonceCleanup()
+	return handler
 }
 
-// ==================== Access Device Endpoints ====================
+// startNonceCleanup periodically cleans up old nonces
+func (h *SKUDHandler) startNonceCleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
 
-func (h *SKUDHandler) GetAccessDevices(c *gin.Context) {
-	devices, err := h.db.GetAllAccessDevices(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	for range ticker.C {
+		if err := h.db.CleanupOldNonces(context.Background()); err != nil {
+			log.Printf("[SKUD] Failed to cleanup nonces: %v", err)
+		}
 	}
-	if devices == nil {
-		devices = []models.AccessDevice{}
-	}
-	c.JSON(http.StatusOK, devices)
 }
 
-func (h *SKUDHandler) CreateAccessDevice(c *gin.Context) {
-	var req models.CreateAccessDeviceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "error_code": "INVALID_REQUEST"})
-		return
+// getDeviceFromToken validates X-Device-Token and returns the device
+func (h *SKUDHandler) getDeviceFromToken(c *gin.Context) (*models.Device, error) {
+	token := c.GetHeader("X-Device-Token")
+	if token == "" {
+		return nil, nil
 	}
-
-	// Check if device already exists
-	existing, _ := h.db.GetAccessDeviceByDeviceID(c.Request.Context(), req.DeviceID)
-	if existing != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Device already exists", "error_code": "DEVICE_ALREADY_EXISTS"})
-		return
-	}
-
-	device := &models.AccessDevice{
-		DeviceID:  req.DeviceID,
-		SecretKey: req.SecretKey,
-		Name:      req.Name,
-	}
-
-	if err := h.db.CreateAccessDevice(c.Request.Context(), device); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	log.Printf("[SKUD] Created access device: %s (%s)", device.DeviceID, device.ID)
-	c.JSON(http.StatusCreated, device)
-}
-
-func (h *SKUDHandler) DeleteAccessDevice(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
-		return
-	}
-
-	device, err := h.db.GetAccessDeviceByID(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found", "error_code": "DEVICE_NOT_FOUND"})
-		return
-	}
-
-	if err := h.db.DeleteAccessDevice(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	log.Printf("[SKUD] Deleted access device: %s", device.DeviceID)
-	c.Status(http.StatusNoContent)
+	return h.db.GetDeviceByToken(c.Request.Context(), token)
 }
 
 // ==================== Card Endpoints ====================
+// Note: Access devices are now created through the regular Devices page.
+// SKUD uses X-Device-Token (same as IoT devices) for authentication.
 
 func (h *SKUDHandler) GetCards(c *gin.Context) {
 	status := c.Query("status")
@@ -205,15 +168,17 @@ func (h *SKUDHandler) DeleteCard(c *gin.Context) {
 }
 
 // ==================== ESP Device Access Endpoints ====================
+// These endpoints use X-Device-Token (same token as IoT devices)
+// with additional replay attack protection via nonce + timestamp
 
 func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
-	deviceID := c.GetHeader("X-Device-ID")
-	apiKey := c.GetHeader("X-API-Key")
-
-	if deviceID == "" || apiKey == "" {
+	// Authenticate device via X-Device-Token
+	device, err := h.getDeviceFromToken(c)
+	if device == nil || err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":      "Missing device authentication headers",
-			"error_code": "MISSING_DEVICE_HEADERS",
+			"error":      "Invalid or missing device token",
+			"error_code": "INVALID_DEVICE_TOKEN",
+			"access":     false,
 		})
 		return
 	}
@@ -221,29 +186,30 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	var req models.AccessVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Missing card_uid or card_type",
-			"error_code": "MISSING_CARD_FIELDS",
+			"error":      "Invalid request: card_uid, nonce, timestamp required",
+			"error_code": "INVALID_REQUEST",
 		})
 		return
 	}
 
-	// Verify device credentials
-	device, err := h.db.GetAccessDeviceByCredentials(c.Request.Context(), deviceID, apiKey)
-	if err != nil {
-		log.Printf("[SKUD] Unknown device: %s", deviceID)
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":      "Unknown device",
-			"error_code": "UNKNOWN_DEVICE",
+	// Validate nonce (replay attack protection)
+	if err := h.db.CheckAndStoreNonce(c.Request.Context(), device.ID, req.Nonce, req.Timestamp); err != nil {
+		log.Printf("[SKUD] Replay attack detected: device=%s nonce=%s error=%v", device.Name, req.Nonce, err)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Request rejected: possible replay attack",
+			"error_code": "REPLAY_DETECTED",
 			"access":     false,
 		})
 		return
 	}
 
+	deviceName := device.Name
+
 	// Get card
 	card, err := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
 	if err != nil {
 		log.Printf("[SKUD] Card not found: %s", req.CardUID)
-		h.logAccess(c, deviceID, req.CardUID, req.CardType, "verify", "not_found", false)
+		h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "not_found", false)
 		c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
 		return
 	}
@@ -253,21 +219,20 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 	allowed := card.Status == models.CardStatusActive && linkedToDevice
 
 	log.Printf("[SKUD] Verify: device=%s card=%s status=%s linked=%v allowed=%v",
-		deviceID, req.CardUID, card.Status, linkedToDevice, allowed)
+		deviceName, req.CardUID, card.Status, linkedToDevice, allowed)
 
-	h.logAccess(c, deviceID, req.CardUID, req.CardType, "verify", card.Status, allowed)
+	h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", card.Status, allowed)
 
 	c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: allowed})
 }
 
 func (h *SKUDHandler) RegisterCard(c *gin.Context) {
-	deviceID := c.GetHeader("X-Device-ID")
-	apiKey := c.GetHeader("X-API-Key")
-
-	if deviceID == "" || apiKey == "" {
+	// Authenticate device via X-Device-Token
+	device, err := h.getDeviceFromToken(c)
+	if device == nil || err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":      "Missing device authentication headers",
-			"error_code": "MISSING_DEVICE_HEADERS",
+			"error":      "Invalid or missing device token",
+			"error_code": "INVALID_DEVICE_TOKEN",
 		})
 		return
 	}
@@ -275,22 +240,23 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 	var req models.AccessRegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Missing card_uid or card_type",
-			"error_code": "MISSING_CARD_FIELDS",
+			"error":      "Invalid request: card_uid, nonce, timestamp required",
+			"error_code": "INVALID_REQUEST",
 		})
 		return
 	}
 
-	// Verify device credentials
-	device, err := h.db.GetAccessDeviceByCredentials(c.Request.Context(), deviceID, apiKey)
-	if err != nil {
-		log.Printf("[SKUD] Unknown device: %s", deviceID)
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":      "Unknown device",
-			"error_code": "UNKNOWN_DEVICE",
+	// Validate nonce (replay attack protection)
+	if err := h.db.CheckAndStoreNonce(c.Request.Context(), device.ID, req.Nonce, req.Timestamp); err != nil {
+		log.Printf("[SKUD] Replay attack detected: device=%s nonce=%s error=%v", device.Name, req.Nonce, err)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":      "Request rejected: possible replay attack",
+			"error_code": "REPLAY_DETECTED",
 		})
 		return
 	}
+
+	deviceName := device.Name
 
 	// Check if card exists
 	card, err := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
@@ -324,9 +290,9 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 		}
 	}
 
-	h.logAccess(c, deviceID, req.CardUID, req.CardType, "register", card.Status, false)
+	h.logAccess(c, deviceName, req.CardUID, req.CardType, "register", card.Status, false)
 
-	log.Printf("[SKUD] Register: device=%s card=%s status=%s", deviceID, req.CardUID, card.Status)
+	log.Printf("[SKUD] Register: device=%s card=%s status=%s", deviceName, req.CardUID, card.Status)
 	c.JSON(http.StatusAccepted, models.AccessRegisterResponse{Status: card.Status})
 }
 
