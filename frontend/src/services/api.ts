@@ -13,6 +13,7 @@ import type {
   Card,
   AccessLog,
   UpdateCardStatusRequest,
+  UpdateCardRequest,
 } from '../types';
 
 // В production API на тому ж домені через LB path routing
@@ -235,6 +236,11 @@ export const skudApi = {
 
   updateCardStatus: async (id: string, req: UpdateCardStatusRequest): Promise<Card> => {
     const { data } = await api.patch(`/skud/cards/${id}/status`, req);
+    return data;
+  },
+
+  updateCard: async (id: string, req: UpdateCardRequest): Promise<Card> => {
+    const { data } = await api.put(`/skud/cards/${id}`, req);
     return data;
   },
 

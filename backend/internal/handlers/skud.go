@@ -190,6 +190,57 @@ func (h *SKUDHandler) UpdateCardStatus(c *gin.Context) {
 	// Return updated card
 	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), id)
 	log.Printf("[SKUD] Card status updated: %s -> %s", card.CardUID, req.Status)
+	
+	// Broadcast card update to WebSocket clients
+	if updatedCard != nil {
+		h.hub.BroadcastCardUpdate("updated", updatedCard)
+	}
+	
+	c.JSON(http.StatusOK, updatedCard)
+}
+
+// UpdateCard updates card details (name, status)
+func (h *SKUDHandler) UpdateCard(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid card ID"})
+		return
+	}
+
+	var req models.UpdateCardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate status if provided
+	if req.Status != nil {
+		if *req.Status != models.CardStatusPending && *req.Status != models.CardStatusActive && *req.Status != models.CardStatusDisabled {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status", "error_code": "INVALID_STATUS"})
+			return
+		}
+	}
+
+	card, err := h.db.GetCardByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Card not found", "error_code": "CARD_NOT_FOUND"})
+		return
+	}
+
+	if err := h.db.UpdateCard(c.Request.Context(), id, req.Name, req.Status); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated card
+	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), id)
+	log.Printf("[SKUD] Card updated: %s (name=%v)", card.CardUID, req.Name)
+	
+	// Broadcast card update to WebSocket clients
+	if updatedCard != nil {
+		h.hub.BroadcastCardUpdate("updated", updatedCard)
+	}
+	
 	c.JSON(http.StatusOK, updatedCard)
 }
 
@@ -267,6 +318,12 @@ func (h *SKUDHandler) LinkCardToDevice(c *gin.Context) {
 	// Return updated card
 	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), cardID)
 	log.Printf("[SKUD] Card %s linked to device %s", card.CardUID, device.Name)
+	
+	// Broadcast card update to WebSocket clients
+	if updatedCard != nil {
+		h.hub.BroadcastCardUpdate("updated", updatedCard)
+	}
+	
 	c.JSON(http.StatusOK, updatedCard)
 }
 
@@ -301,6 +358,12 @@ func (h *SKUDHandler) UnlinkCardFromDevice(c *gin.Context) {
 	// Return updated card
 	updatedCard, _ := h.db.GetCardByID(c.Request.Context(), cardID)
 	log.Printf("[SKUD] Card %s unlinked from device %s", card.CardUID, deviceID)
+	
+	// Broadcast card update to WebSocket clients
+	if updatedCard != nil {
+		h.hub.BroadcastCardUpdate("updated", updatedCard)
+	}
+	
 	c.JSON(http.StatusOK, updatedCard)
 }
 
@@ -372,7 +435,16 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 
 	h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", card.Status, allowed)
 
-	c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: allowed})
+	// Return card name for ESP display (use name if set, otherwise use card_uid)
+	cardName := card.Name
+	if cardName == "" {
+		cardName = card.CardUID
+	}
+
+	c.JSON(http.StatusOK, models.AccessVerifyResponse{
+		Access:   allowed,
+		CardName: cardName,
+	})
 }
 
 func (h *SKUDHandler) RegisterCard(c *gin.Context) {
@@ -431,6 +503,12 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 			return
 		}
 		log.Printf("[SKUD] New card created as pending: %s", req.CardUID)
+		
+		// Broadcast new card to WebSocket clients
+		createdCard, _ := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
+		if createdCard != nil {
+			h.hub.BroadcastCardUpdate("created", createdCard)
+		}
 	} else {
 		// Card exists
 		if card.Status == models.CardStatusPending {

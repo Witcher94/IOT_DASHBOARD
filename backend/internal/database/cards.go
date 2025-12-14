@@ -79,22 +79,22 @@ func generateRandomHex(length int) string {
 
 func (db *DB) CreateCard(ctx context.Context, card *models.Card) error {
 	query := `
-		INSERT INTO cards (card_uid, status)
-		VALUES ($1, $2)
+		INSERT INTO cards (card_uid, name, status)
+		VALUES ($1, $2, $3)
 		RETURNING id, created_at, updated_at
 	`
-	return db.Pool.QueryRow(ctx, query, card.CardUID, card.Status).
+	return db.Pool.QueryRow(ctx, query, card.CardUID, card.Name, card.Status).
 		Scan(&card.ID, &card.CreatedAt, &card.UpdatedAt)
 }
 
 func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, error) {
 	query := `
-		SELECT id, card_uid, status, created_at, updated_at
+		SELECT id, card_uid, COALESCE(name, ''), status, created_at, updated_at
 		FROM cards WHERE id = $1
 	`
 	card := &models.Card{}
 	err := db.Pool.QueryRow(ctx, query, id).Scan(
-		&card.ID, &card.CardUID, &card.Status, &card.CreatedAt, &card.UpdatedAt,
+		&card.ID, &card.CardUID, &card.Name, &card.Status, &card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -112,12 +112,12 @@ func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, erro
 
 func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, error) {
 	query := `
-		SELECT id, card_uid, status, created_at, updated_at
+		SELECT id, card_uid, COALESCE(name, ''), status, created_at, updated_at
 		FROM cards WHERE card_uid = $1
 	`
 	card := &models.Card{}
 	err := db.Pool.QueryRow(ctx, query, cardUID).Scan(
-		&card.ID, &card.CardUID, &card.Status, &card.CreatedAt, &card.UpdatedAt,
+		&card.ID, &card.CardUID, &card.Name, &card.Status, &card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (db *DB) GetCardsFiltered(ctx context.Context, status string, deviceID *uui
 	if deviceID != nil {
 		// Filter cards linked to specific device
 		query = `
-			SELECT DISTINCT c.id, c.card_uid, c.status, c.created_at, c.updated_at
+			SELECT DISTINCT c.id, c.card_uid, COALESCE(c.name, ''), c.status, c.created_at, c.updated_at
 			FROM cards c
 			INNER JOIN card_devices cd ON cd.card_id = c.id
 			WHERE cd.device_id = $1
@@ -165,7 +165,7 @@ func (db *DB) GetCardsFiltered(ctx context.Context, status string, deviceID *uui
 		query += " ORDER BY c.updated_at DESC"
 	} else {
 		// All cards
-		query = `SELECT id, card_uid, status, created_at, updated_at FROM cards`
+		query = `SELECT id, card_uid, COALESCE(name, ''), status, created_at, updated_at FROM cards`
 		if status != "" {
 			query += fmt.Sprintf(" WHERE status = $%d", argNum)
 			args = append(args, status)
@@ -183,7 +183,7 @@ func (db *DB) GetCardsFiltered(ctx context.Context, status string, deviceID *uui
 	for rows.Next() {
 		var card models.Card
 		if err := rows.Scan(
-			&card.ID, &card.CardUID, &card.Status, &card.CreatedAt, &card.UpdatedAt,
+			&card.ID, &card.CardUID, &card.Name, &card.Status, &card.CreatedAt, &card.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -198,6 +198,27 @@ func (db *DB) GetCardsFiltered(ctx context.Context, status string, deviceID *uui
 func (db *DB) UpdateCardStatus(ctx context.Context, id uuid.UUID, status string) error {
 	query := `UPDATE cards SET status = $2, updated_at = $3 WHERE id = $1`
 	_, err := db.Pool.Exec(ctx, query, id, status, time.Now())
+	return err
+}
+
+func (db *DB) UpdateCard(ctx context.Context, id uuid.UUID, name *string, status *string) error {
+	query := `UPDATE cards SET updated_at = $2`
+	args := []interface{}{id, time.Now()}
+	argNum := 3
+
+	if name != nil {
+		query += fmt.Sprintf(", name = $%d", argNum)
+		args = append(args, *name)
+		argNum++
+	}
+	if status != nil {
+		query += fmt.Sprintf(", status = $%d", argNum)
+		args = append(args, *status)
+		argNum++
+	}
+
+	query += ` WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, args...)
 	return err
 }
 

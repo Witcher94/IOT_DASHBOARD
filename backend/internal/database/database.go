@@ -172,6 +172,8 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_access_challenges_device ON access_challenges(device_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_access_challenges_expires ON access_challenges(expires_at)`,
+		// Card name field for display
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS name VARCHAR(255) DEFAULT ''`,
 	}
 
 	for _, migration := range migrations {

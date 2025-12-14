@@ -259,12 +259,13 @@ const (
 
 // Card представляє NFC/RFID картку доступу
 type Card struct {
-	ID        uuid.UUID      `json:"id"`
-	CardUID   string         `json:"card_uid"`
-	Status    string         `json:"status"` // pending, active, disabled
-	Devices   []DeviceBrief  `json:"devices,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID        uuid.UUID     `json:"id"`
+	CardUID   string        `json:"card_uid"`
+	Name      string        `json:"name"` // Custom display name for the card
+	Status    string        `json:"status"` // pending, active, disabled
+	Devices   []DeviceBrief `json:"devices,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 // DeviceBrief - короткий опис пристрою для зв'язку з карткою
@@ -292,7 +293,8 @@ type AccessVerifyRequest struct {
 
 // AccessVerifyResponse відповідь на верифікацію
 type AccessVerifyResponse struct {
-	Access bool `json:"access"`
+	Access   bool   `json:"access"`
+	CardName string `json:"card_name,omitempty"` // Display name for ESP screen
 }
 
 // AccessRegisterRequest запит на реєстрацію нової картки (з challenge-response для SKUD)
@@ -316,6 +318,12 @@ type AccessRegisterResponse struct {
 // UpdateCardStatusRequest запит на оновлення статусу картки
 type UpdateCardStatusRequest struct {
 	Status string `json:"status" binding:"required"`
+}
+
+// UpdateCardRequest запит на оновлення картки (name та інші поля)
+type UpdateCardRequest struct {
+	Name   *string `json:"name"`
+	Status *string `json:"status"`
 }
 
 // CreateAccessDeviceRequest запит на створення пристрою СКУД

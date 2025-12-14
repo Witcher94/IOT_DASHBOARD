@@ -151,6 +151,34 @@ func (h *Hub) BroadcastAccessLog(logData interface{}) {
 	}
 }
 
+// BroadcastCardUpdate broadcasts SKUD card changes to all connected clients
+// action: "created", "updated", "deleted"
+func (h *Hub) BroadcastCardUpdate(action string, cardData interface{}) {
+	data, err := json.Marshal(&Message{
+		Type: "card_update",
+		Data: map[string]interface{}{
+			"action": action,
+			"card":   cardData,
+		},
+	})
+	if err != nil {
+		log.Printf("Error marshaling card update: %v", err)
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		select {
+		case client.Send <- data:
+		default:
+			close(client.Send)
+			delete(h.clients, client)
+		}
+	}
+}
+
 func (c *Client) ReadPump() {
 	defer func() {
 		c.Hub.Unregister(c)

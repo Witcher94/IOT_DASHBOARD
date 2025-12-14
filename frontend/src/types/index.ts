@@ -121,10 +121,16 @@ export type CardStatus = 'pending' | 'active' | 'disabled';
 export interface Card {
   id: string;
   card_uid: string;
+  name: string;
   status: CardStatus;
   devices?: DeviceBrief[];
   created_at: string;
   updated_at: string;
+}
+
+export interface UpdateCardRequest {
+  name?: string;
+  status?: CardStatus;
 }
 
 export interface DeviceBrief {

@@ -179,6 +179,7 @@ func main() {
 			// Cards management
 			skud.GET("/cards", skudHandler.GetCards)
 			skud.GET("/cards/:id", skudHandler.GetCard)
+			skud.PUT("/cards/:id", skudHandler.UpdateCard)
 			skud.PATCH("/cards/:id/status", skudHandler.UpdateCardStatus)
 			skud.DELETE("/cards/:id", skudHandler.DeleteCard)
 

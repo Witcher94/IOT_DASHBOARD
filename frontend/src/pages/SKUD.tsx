@@ -15,6 +15,9 @@ import {
   Search,
   RotateCcw,
   Cpu,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { skudApi, devicesApi } from '../services/api';
@@ -165,6 +168,10 @@ export default function SKUD() {
           if (data.type === 'access_log' && data.data) {
             // New access log received
             setWsLogs((prev) => [data.data as AccessLog, ...prev].slice(0, 100)); // Keep last 100
+          } else if (data.type === 'card_update' && data.data) {
+            // Card created/updated/deleted - refresh cards list
+            console.log('[SKUD WS] Card update:', data.data.action);
+            queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
           }
         } catch (e) {
           console.error('[SKUD WS] Parse error:', e);
@@ -182,9 +189,7 @@ export default function SKUD() {
         
         // Reconnect after 3 seconds
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          if (activeTab === 'logs') {
-            connectWebSocket();
-          }
+          connectWebSocket();
         }, 3000);
       };
     } catch (error) {
@@ -199,19 +204,9 @@ export default function SKUD() {
     }
   }, [activeTab, wsConnected, loadLogs]);
 
-  // Connect WebSocket when logs tab is active
+  // Connect WebSocket on mount (for both cards and logs real-time updates)
   useEffect(() => {
-    if (activeTab === 'logs') {
-      connectWebSocket();
-    } else {
-      // Close connection when switching away from logs
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    }
+    connectWebSocket();
 
     return () => {
       if (wsRef.current) {
@@ -221,7 +216,7 @@ export default function SKUD() {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [activeTab, connectWebSocket]);
+  }, [connectWebSocket]);
 
   // Queries - get ALL cards (show linked devices for each)
   const { data: cards, isLoading: cardsLoading } = useQuery({
@@ -269,6 +264,35 @@ export default function SKUD() {
     },
     onError: () => toast.error(t.error),
   });
+
+  const updateCardMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      skudApi.updateCard(id, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
+      toast.success(t.cardUpdated || 'Картку оновлено');
+    },
+    onError: () => toast.error(t.error),
+  });
+
+  // State for inline editing
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+
+  const startEditing = (cardId: string, currentName: string) => {
+    setEditingCardId(cardId);
+    setEditingName(currentName);
+  };
+
+  const saveCardName = (cardId: string) => {
+    updateCardMutation.mutate({ id: cardId, name: editingName });
+    setEditingCardId(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingCardId(null);
+    setEditingName('');
+  };
 
   const tabs = [
     { id: 'cards' as const, icon: CreditCard, label: t.cards },
@@ -355,12 +379,51 @@ export default function SKUD() {
                   className="glass rounded-xl p-5 border border-dark-700/50 hover:border-primary-500/30 transition-all"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <div 
-                      onClick={() => navigate(`/skud/cards/${card.id}`)}
-                      className="cursor-pointer hover:opacity-80 transition-opacity"
-                    >
-                      <p className="font-mono text-lg font-semibold text-white mb-1 hover:text-primary-400 transition-colors">
-                        {card.card_uid}
+                    <div className="flex-1 min-w-0">
+                      {/* Editable Name */}
+                      {editingCardId === card.id ? (
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            placeholder="Ім'я картки..."
+                            className="input-field text-lg font-semibold py-1 flex-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveCardName(card.id);
+                              if (e.key === 'Escape') cancelEditing();
+                            }}
+                          />
+                          <button
+                            onClick={() => saveCardName(card.id)}
+                            className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="p-1.5 rounded-lg bg-dark-700 text-dark-300 hover:bg-dark-600 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mb-2 group">
+                          <p className="text-lg font-semibold text-white truncate">
+                            {card.name || <span className="text-dark-400 italic">Без імені</span>}
+                          </p>
+                          <button
+                            onClick={() => startEditing(card.id, card.name || '')}
+                            className="p-1 rounded-lg text-dark-500 hover:text-primary-400 hover:bg-dark-700 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                      {/* Card UID (always visible) */}
+                      <p className="font-mono text-xs text-dark-400 mb-2 truncate">
+                        UID: {card.card_uid}
                       </p>
                       <StatusBadge status={card.status} />
                     </div>
@@ -370,7 +433,7 @@ export default function SKUD() {
                           deleteCardMutation.mutate(card.id);
                         }
                       }}
-                      className="p-2 rounded-lg text-dark-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                      className="p-2 rounded-lg text-dark-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
