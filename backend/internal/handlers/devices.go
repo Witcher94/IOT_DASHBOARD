@@ -213,6 +213,15 @@ func (h *DeviceHandler) ClearChipID(c *gin.Context) {
 	}
 
 	log.Printf("[DEVICE] Chip ID cleared for device %s (was: %s)", device.Name, oldChipID)
+
+	// Broadcast device update via WebSocket
+	if h.hub != nil {
+		updatedDevice, _ := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+		if updatedDevice != nil {
+			h.hub.BroadcastDeviceUpdate("chip_id_cleared", updatedDevice)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "Chip ID cleared. Device can now be bound to new hardware.",
 		"old_chip_id": oldChipID,
@@ -260,6 +269,15 @@ func (h *DeviceHandler) ConfirmChipID(c *gin.Context) {
 	}
 
 	log.Printf("[DEVICE] Chip ID confirmed for device %s: %s", device.Name, pendingChipID)
+
+	// Broadcast device update via WebSocket
+	if h.hub != nil {
+		updatedDevice, _ := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+		if updatedDevice != nil {
+			h.hub.BroadcastDeviceUpdate("chip_id_confirmed", updatedDevice)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Chip ID confirmed. Device is now locked to this hardware.",
 		"chip_id": pendingChipID,
@@ -307,6 +325,15 @@ func (h *DeviceHandler) RejectChipID(c *gin.Context) {
 	}
 
 	log.Printf("[DEVICE] Pending chip_id rejected for device %s: %s", device.Name, rejectedChipID)
+
+	// Broadcast device update via WebSocket
+	if h.hub != nil {
+		updatedDevice, _ := h.deviceService.GetDevice(c.Request.Context(), deviceID)
+		if updatedDevice != nil {
+			h.hub.BroadcastDeviceUpdate("chip_id_rejected", updatedDevice)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message":          "Pending chip_id rejected.",
 		"rejected_chip_id": rejectedChipID,

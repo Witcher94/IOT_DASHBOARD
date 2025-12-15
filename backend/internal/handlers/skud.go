@@ -104,14 +104,14 @@ func (h *SKUDHandler) validateAndLockChipID(c *gin.Context, device *models.Devic
 		log.Printf("[SKUD] Device %s: pending chip_id set to %s (awaiting confirmation)", device.Name, chipID)
 		device.PendingChipID = &chipID
 
-		// Broadcast notification for user to confirm
+		// Broadcast device update for user to confirm chip_id in dashboard
 		if h.hub != nil {
-			h.hub.BroadcastAccessLog(map[string]interface{}{
-				"type":        "chip_id_pending",
-				"device_name": device.Name,
-				"device_id":   device.ID,
-				"chip_id":     chipID,
-				"message":     "New device hardware detected - please confirm in dashboard",
+			h.hub.BroadcastDeviceUpdate("chip_id_pending", map[string]interface{}{
+				"id":              device.ID,
+				"name":            device.Name,
+				"device_type":     device.DeviceType,
+				"pending_chip_id": chipID,
+				"message":         "New device hardware detected - please confirm in dashboard",
 			})
 		}
 	}

@@ -151,6 +151,34 @@ func (h *Hub) BroadcastAccessLog(logData interface{}) {
 	}
 }
 
+// BroadcastDeviceUpdate broadcasts device changes to all connected clients
+// event: "chip_id_pending", "chip_id_confirmed", "chip_id_rejected", "chip_id_cleared"
+func (h *Hub) BroadcastDeviceUpdate(event string, deviceData interface{}) {
+	data, err := json.Marshal(&Message{
+		Type: "device_update",
+		Data: map[string]interface{}{
+			"event":  event,
+			"device": deviceData,
+		},
+	})
+	if err != nil {
+		log.Printf("Error marshaling device update: %v", err)
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		select {
+		case client.Send <- data:
+		default:
+			close(client.Send)
+			delete(h.clients, client)
+		}
+	}
+}
+
 // BroadcastCardUpdate broadcasts SKUD card changes to all connected clients
 // action: "created", "updated", "deleted"
 func (h *Hub) BroadcastCardUpdate(action string, cardData interface{}) {

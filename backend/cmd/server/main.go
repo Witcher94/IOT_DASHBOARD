@@ -91,7 +91,7 @@ func main() {
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{cfg.FrontendURL, "http://localhost:3000", "http://localhost:5173", "http://localhost"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Device-Token"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Device-Token", "X-Chip-ID"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,

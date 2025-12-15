@@ -339,59 +339,62 @@ func (db *DB) GetAccessLogs(ctx context.Context, limit int) ([]models.AccessLog,
 }
 
 func (db *DB) GetAccessLogsFiltered(ctx context.Context, filter AccessLogFilter) ([]models.AccessLog, error) {
-	// Build dynamic query with filters
+	// Build dynamic query with filters - LEFT JOIN with cards to get card_name
 	query := `
-		SELECT id, COALESCE(device_id, ''), COALESCE(card_uid, ''), COALESCE(card_type, ''),
-		       action, COALESCE(status, ''), allowed, created_at
-		FROM access_logs
+		SELECT al.id, COALESCE(al.device_id, ''), COALESCE(al.card_uid, ''), 
+		       COALESCE(c.name, ''), COALESCE(al.card_type, ''),
+		       al.action, COALESCE(al.status, ''), al.allowed, al.created_at
+		FROM access_logs al
+		LEFT JOIN cards c ON al.card_uid = c.card_uid
 		WHERE 1=1
 	`
 	args := []interface{}{}
 	argNum := 1
 
 	if filter.Action != "" {
-		query += ` AND action = $` + strconv.Itoa(argNum)
+		query += ` AND al.action = $` + strconv.Itoa(argNum)
 		args = append(args, filter.Action)
 		argNum++
 	}
 
 	if filter.Allowed != nil {
-		query += ` AND allowed = $` + strconv.Itoa(argNum)
+		query += ` AND al.allowed = $` + strconv.Itoa(argNum)
 		args = append(args, *filter.Allowed)
 		argNum++
 	}
 
 	if filter.CardUID != "" {
-		query += ` AND card_uid ILIKE $` + strconv.Itoa(argNum)
+		// Search by card_uid OR card_name
+		query += ` AND (al.card_uid ILIKE $` + strconv.Itoa(argNum) + ` OR c.name ILIKE $` + strconv.Itoa(argNum) + `)`
 		args = append(args, "%"+filter.CardUID+"%")
 		argNum++
 	}
 
 	if filter.DeviceID != "" {
-		query += ` AND device_id ILIKE $` + strconv.Itoa(argNum)
+		query += ` AND al.device_id ILIKE $` + strconv.Itoa(argNum)
 		args = append(args, "%"+filter.DeviceID+"%")
 		argNum++
 	}
 
 	if filter.CardType != "" {
-		query += ` AND card_type = $` + strconv.Itoa(argNum)
+		query += ` AND al.card_type = $` + strconv.Itoa(argNum)
 		args = append(args, filter.CardType)
 		argNum++
 	}
 
 	if filter.FromDate != "" {
-		query += ` AND created_at >= $` + strconv.Itoa(argNum)
+		query += ` AND al.created_at >= $` + strconv.Itoa(argNum)
 		args = append(args, filter.FromDate)
 		argNum++
 	}
 
 	if filter.ToDate != "" {
-		query += ` AND created_at < ($` + strconv.Itoa(argNum) + `::date + interval '1 day')`
+		query += ` AND al.created_at < ($` + strconv.Itoa(argNum) + `::date + interval '1 day')`
 		args = append(args, filter.ToDate)
 		argNum++
 	}
 
-	query += ` ORDER BY created_at DESC`
+	query += ` ORDER BY al.created_at DESC`
 
 	limit := filter.Limit
 	if limit <= 0 {
@@ -410,7 +413,7 @@ func (db *DB) GetAccessLogsFiltered(ctx context.Context, filter AccessLogFilter)
 	for rows.Next() {
 		var log models.AccessLog
 		if err := rows.Scan(
-			&log.ID, &log.DeviceID, &log.CardUID, &log.CardType,
+			&log.ID, &log.DeviceID, &log.CardUID, &log.CardName, &log.CardType,
 			&log.Action, &log.Status, &log.Allowed, &log.CreatedAt,
 		); err != nil {
 			return nil, err

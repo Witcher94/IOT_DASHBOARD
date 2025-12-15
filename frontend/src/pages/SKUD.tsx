@@ -111,6 +111,7 @@ const cardTypeScenarios: Record<string, string[]> = {
 // Group logs by card_uid for tree view
 interface LogGroup {
   card_uid: string;
+  card_name: string; // Display name for the card
   card_type: string;
   logs: AccessLog[];
   lastAction: string;
@@ -128,6 +129,7 @@ function groupLogsByCard(logs: AccessLog[]): LogGroup[] {
     if (!groups[log.card_uid]) {
       groups[log.card_uid] = {
         card_uid: log.card_uid,
+        card_name: log.card_name || '', // Use card_name from first log
         card_type: log.card_type || 'UNKNOWN',
         logs: [],
         lastAction: log.action,
@@ -136,6 +138,10 @@ function groupLogsByCard(logs: AccessLog[]): LogGroup[] {
         successCount: 0,
         failCount: 0,
       };
+    }
+    // Update card_name if we find a non-empty one (in case first log didn't have it)
+    if (log.card_name && !groups[log.card_uid].card_name) {
+      groups[log.card_uid].card_name = log.card_name;
     }
     groups[log.card_uid].logs.push(log);
     if (!log.allowed) groups[log.card_uid].hasErrors = true;
@@ -797,7 +803,7 @@ export default function SKUD() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" />
                 <input
                   type="text"
-                  placeholder="Пошук за UID картки..."
+                  placeholder="Пошук за назвою або UID..."
                   value={logCardUidFilter}
                   onChange={(e) => setLogCardUidFilter(e.target.value)}
                   className="input-field pl-10 py-2 text-sm"
@@ -866,9 +872,16 @@ export default function SKUD() {
                             {/* Action badge with icon */}
                             <ActionBadge action={log.action} />
 
-                            {/* Card UID */}
-                            <span className="font-mono text-sm bg-dark-800/50 px-2 py-0.5 rounded">
-                              {log.card_uid}
+                            {/* Card Name + UID */}
+                            <span className="bg-dark-800/50 px-2 py-0.5 rounded">
+                              {log.card_name ? (
+                                <>
+                                  <span className="text-sm font-medium">{log.card_name}</span>
+                                  <span className="font-mono text-xs text-dark-400 ml-1.5">({log.card_uid})</span>
+                                </>
+                              ) : (
+                                <span className="font-mono text-sm">{log.card_uid}</span>
+                              )}
                             </span>
 
                             {/* Card type */}
@@ -940,7 +953,14 @@ export default function SKUD() {
                               {/* Card info */}
                               <div className="text-left">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono font-medium">{group.card_uid}</span>
+                                  {group.card_name ? (
+                                    <>
+                                      <span className="font-medium">{group.card_name}</span>
+                                      <span className="font-mono text-xs text-dark-400">({group.card_uid})</span>
+                                    </>
+                                  ) : (
+                                    <span className="font-mono font-medium">{group.card_uid}</span>
+                                  )}
                                   <CardTypeBadge cardType={group.card_type} />
                                 </div>
                                 <div className="text-xs text-dark-400 mt-0.5">

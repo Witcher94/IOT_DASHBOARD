@@ -110,7 +110,7 @@ export interface CreateCommandRequest {
 }
 
 export interface WebSocketMessage {
-  type: 'metrics' | 'device_status' | 'access_log';
+  type: 'metrics' | 'device_status' | 'access_log' | 'device_update' | 'card_update';
   device_id?: string;
   data: Record<string, unknown>;
 }
@@ -175,6 +175,7 @@ export interface AccessLog {
   id: string;
   device_id: string;
   card_uid: string;
+  card_name?: string; // Joined from cards table
   card_type: CardType | string;
   action: AccessLogAction | string;
   status: string;

@@ -355,6 +355,7 @@ type AccessLog struct {
 	ID        uuid.UUID `json:"id"`
 	DeviceID  string    `json:"device_id"`
 	CardUID   string    `json:"card_uid"`
+	CardName  string    `json:"card_name,omitempty"` // Joined from cards table
 	CardType  string    `json:"card_type"`
 	Action    string    `json:"action"` // verify, register, card_status, card_delete, desfire_auth, provision, key_rotation, clone_attempt
 	Status    string    `json:"status"`

@@ -185,6 +185,14 @@ export default function DeviceDetail() {
       refetchMetrics();
       queryClient.invalidateQueries({ queryKey: ['device', id] });
     }
+    // Handle device updates (chip_id pending/confirmed/rejected/cleared)
+    if (message.type === 'device_update') {
+      const data = message.data as { event?: string; device?: { id?: string } };
+      if (data.device?.id === id) {
+        console.log('[DeviceDetail] Received device_update:', data.event);
+        queryClient.invalidateQueries({ queryKey: ['device', id] });
+      }
+    }
   }, [id, refetchMetrics, queryClient]);
 
   useWebSocket(handleWebSocketMessage);
