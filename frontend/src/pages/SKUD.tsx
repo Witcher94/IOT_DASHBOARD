@@ -37,7 +37,6 @@ import { skudApi, devicesApi } from '../services/api';
 import { useTranslation } from '../contexts/settingsStore';
 import { useAuthStore } from '../contexts/authStore';
 import type { CardStatus, AccessLog, Device, AccessLogAction, CardType } from '../types';
-import { useMutation } from '@tanstack/react-query';
 
 type TabType = 'cards' | 'logs';
 
