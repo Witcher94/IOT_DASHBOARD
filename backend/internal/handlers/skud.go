@@ -188,9 +188,11 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[SKUD AUTH] ════════ DEVICE CHALLENGE GENERATED ════════")
+	log.Printf("[SKUD AUTH] ════════ ESP32 DEVICE CHALLENGE (NOT card!) ════════")
 	log.Printf("[SKUD AUTH] Device: %s", device.Name)
-	log.Printf("[SKUD AUTH] Challenge (full): %s", challenge)
+	log.Printf("[SKUD AUTH] Challenge (32-char hex): %s", challenge)
+	log.Printf("[SKUD AUTH] Purpose: Verify ESP32 device authenticity")
+	log.Printf("[SKUD AUTH] NOTE: This is DIFFERENT from DESFire card crypto challenge!")
 	log.Printf("[SKUD AUTH] Expires in: 30 seconds")
 	log.Printf("[SKUD AUTH] ════════ Waiting for verify request ════════")
 

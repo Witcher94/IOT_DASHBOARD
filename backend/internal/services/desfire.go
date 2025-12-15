@@ -283,9 +283,12 @@ func (s *DesfireService) ProcessAuth1Response(session *DesfireSession, encRndBHe
 	}
 	session.RndA = rndA
 	
-	// Log the challenge values for debugging
-	log.Printf("[DESFire CRYPTO] Card %s: RndB (from card) = %s", session.CardUID, hex.EncodeToString(rndB))
-	log.Printf("[DESFire CRYPTO] Card %s: RndA (server generated) = %s", session.CardUID, hex.EncodeToString(rndA))
+	// Log the DESFire card challenge values (different from ESP32 device challenge!)
+	log.Printf("[DESFire CRYPTO] ════════ CARD CHALLENGE-RESPONSE (AES-128) ════════")
+	log.Printf("[DESFire CRYPTO] Card UID: %s", session.CardUID)
+	log.Printf("[DESFire CRYPTO] RndB (card's random, 16 bytes): %s", hex.EncodeToString(rndB))
+	log.Printf("[DESFire CRYPTO] RndA (server's random, 16 bytes): %s", hex.EncodeToString(rndA))
+	log.Printf("[DESFire CRYPTO] NOTE: This is DIFFERENT from ESP32 device challenge!")
 	
 	// Rotate RndB left by 1 byte
 	rndBrot := make([]byte, 16)
