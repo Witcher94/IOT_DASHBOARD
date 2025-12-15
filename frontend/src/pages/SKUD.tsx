@@ -20,6 +20,7 @@ import {
   X,
   Key,
   Shield,
+  ShieldOff,
   UserPlus,
   RefreshCw,
   Calendar,
@@ -28,12 +29,15 @@ import {
   GitBranch,
   ChevronDown,
   ChevronRight,
+  AlertTriangle,
+  Info,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { skudApi, devicesApi } from '../services/api';
 import { useTranslation } from '../contexts/settingsStore';
 import { useAuthStore } from '../contexts/authStore';
 import type { CardStatus, AccessLog, Device, AccessLogAction, CardType } from '../types';
+import { useMutation } from '@tanstack/react-query';
 
 type TabType = 'cards' | 'logs';
 
@@ -231,13 +235,50 @@ export default function SKUD() {
   const groupedLogs = useMemo(() => groupLogsByCard(wsLogs), [wsLogs]);
 
   // Fetch SKUD devices
-  const { data: allDevices } = useQuery({
+  const { data: allDevices, refetch: refetchDevices } = useQuery({
     queryKey: ['devices'],
     queryFn: devicesApi.getAll,
   });
 
   // Filter only SKUD devices
   const skudDevices = allDevices?.filter((d: Device) => d.device_type === 'skud') || [];
+
+  // Get currently selected device
+  const selectedDevice = skudDevices.find((d: Device) => d.id === selectedDeviceId);
+
+  // Chip ID management mutations
+  const clearChipIdMutation = useMutation({
+    mutationFn: (deviceId: string) => devicesApi.clearChipId(deviceId),
+    onSuccess: (data) => {
+      refetchDevices();
+      toast.success(`Hardware lock cleared! Old Chip ID: ${data.old_chip_id}`);
+    },
+    onError: () => {
+      toast.error('Failed to clear Chip ID');
+    },
+  });
+
+  const confirmChipIdMutation = useMutation({
+    mutationFn: (deviceId: string) => devicesApi.confirmChipId(deviceId),
+    onSuccess: (data) => {
+      refetchDevices();
+      toast.success(`Hardware confirmed! Chip ID: ${data.chip_id}`);
+    },
+    onError: () => {
+      toast.error('Failed to confirm Chip ID');
+    },
+  });
+
+  const rejectChipIdMutation = useMutation({
+    mutationFn: (deviceId: string) => devicesApi.rejectChipId(deviceId),
+    onSuccess: () => {
+      refetchDevices();
+      toast.success('Pending Chip ID rejected');
+    },
+    onError: () => {
+      toast.error('Failed to reject Chip ID');
+    },
+  });
 
   // Update URL when device changes
   const handleDeviceChange = (deviceId: string) => {
@@ -316,6 +357,11 @@ export default function SKUD() {
             // Card created/updated/deleted - refresh cards list
             console.log('[SKUD WS] Card update:', data.data.action);
             queryClient.invalidateQueries({ queryKey: ['skud-cards'] });
+          } else if (data.type === 'device_update' && data.data) {
+            // Device update (chip_id pending/confirmed/rejected/cleared) - refresh devices list
+            const updateData = data.data as { event?: string; device?: { id?: string } };
+            console.log('[SKUD WS] Device update:', updateData.event);
+            queryClient.invalidateQueries({ queryKey: ['devices'] });
           }
         } catch (e) {
           console.error('[SKUD WS] Parse error:', e);
@@ -482,6 +528,111 @@ export default function SKUD() {
           </button>
         ))}
       </motion.div>
+
+      {/* Selected Device Info Panel - shows chip_id status for SKUD devices */}
+      {selectedDevice && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-xl p-4 mb-6 border border-dark-700/50"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${selectedDevice.is_online ? 'bg-emerald-500/15' : 'bg-rose-500/15'}`}>
+                <Cpu className={`w-5 h-5 ${selectedDevice.is_online ? 'text-emerald-400' : 'text-rose-400'}`} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold">{selectedDevice.name}</h3>
+                  <span className={`px-2 py-0.5 text-xs rounded-full ${
+                    selectedDevice.is_online 
+                      ? 'bg-emerald-500/15 text-emerald-300' 
+                      : 'bg-rose-500/15 text-rose-300'
+                  }`}>
+                    {selectedDevice.is_online ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+                <p className="text-xs text-dark-400 mt-0.5">
+                  {selectedDevice.platform} • {selectedDevice.firmware}
+                </p>
+              </div>
+            </div>
+            
+            {/* Chip ID Status */}
+            <div className="flex-1 max-w-md">
+              {selectedDevice.chip_id ? (
+                // Case 1: Confirmed chip_id
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-sm text-emerald-400 mb-1">
+                      <Shield className="w-4 h-4" />
+                      <span>Hardware Lock Active</span>
+                    </div>
+                    <code className="text-xs font-mono text-dark-400 bg-dark-800 px-2 py-1 rounded block">
+                      {selectedDevice.chip_id}
+                    </code>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirm('Clear hardware lock? This will allow the device to be bound to different hardware.')) {
+                        clearChipIdMutation.mutate(selectedDevice.id);
+                      }
+                    }}
+                    disabled={clearChipIdMutation.isPending}
+                    className="p-2 rounded-lg text-rose-400 hover:bg-rose-500/20 transition-colors"
+                    title="Clear hardware lock"
+                  >
+                    <ShieldOff className={`w-4 h-4 ${clearChipIdMutation.isPending ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              ) : selectedDevice.pending_chip_id ? (
+                // Case 2: Pending chip_id - needs confirmation
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-orange-400">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>New hardware detected - confirm or reject</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono text-orange-300 bg-orange-500/10 border border-orange-500/30 px-2 py-1.5 rounded">
+                      {selectedDevice.pending_chip_id}
+                    </code>
+                    <button
+                      onClick={() => {
+                        if (confirm('Confirm this hardware? The device will be locked to this Chip ID.')) {
+                          confirmChipIdMutation.mutate(selectedDevice.id);
+                        }
+                      }}
+                      disabled={confirmChipIdMutation.isPending}
+                      className="p-2 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                      title="Confirm hardware"
+                    >
+                      <Check className={`w-4 h-4 ${confirmChipIdMutation.isPending ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Reject this hardware?')) {
+                          rejectChipIdMutation.mutate(selectedDevice.id);
+                        }
+                      }}
+                      disabled={rejectChipIdMutation.isPending}
+                      className="p-2 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition-colors"
+                      title="Reject hardware"
+                    >
+                      <X className={`w-4 h-4 ${rejectChipIdMutation.isPending ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // Case 3: No chip_id at all - waiting for first connection
+                <div className="flex items-center gap-2 text-sm text-amber-400">
+                  <Info className="w-4 h-4" />
+                  <span>Waiting for first device connection...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Cards Tab */}
       {activeTab === 'cards' && (

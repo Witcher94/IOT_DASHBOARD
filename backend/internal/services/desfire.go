@@ -459,8 +459,25 @@ func (s *DesfireService) ProcessProvisioningStep(session *DesfireSession, respon
 	switch session.State {
 	case DesfireStateProvSelectPicc:
 		// Check if PICC selected OK
-		if len(response) == 0 || response[0] != 0x00 {
-			return nil, "error", fmt.Errorf("select PICC failed: %s", responseHex)
+		// 0x00 = success
+		// 0xCA = APPLICATION_NOT_FOUND (might be EV2/EV3 card in ISO mode)
+		if len(response) == 0 {
+			return nil, "error", fmt.Errorf("select PICC empty response")
+		}
+		if response[0] != 0x00 {
+			// 0xCA means AID not found - but AID 0x000000 (PICC) should always exist
+			// This might indicate the card is in ISO7816 mode or just needs auth directly
+			if response[0] == 0xCA {
+				log.Printf("[DESFire Prov] SELECT PICC returned 0xCA - card may already be at PICC level, trying auth directly")
+				// Try auth directly without select
+				session.State = DesfireStateProvAuthPicc1
+				session.CurrentKey = defaultDesfireKey
+				return &DesfireCommand{
+					Type: DesfireCmdAuth1,
+					Data: "AA00", // Authenticate AES, key 0
+				}, "continue", nil
+			}
+			return nil, "error", fmt.Errorf("select PICC failed with status: 0x%02X", response[0])
 		}
 		// Start PICC authentication with default key
 		session.State = DesfireStateProvAuthPicc1
