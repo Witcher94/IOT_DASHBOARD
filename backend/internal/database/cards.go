@@ -5,11 +5,26 @@ import (
 	"crypto/rand"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/pfaka/iot-dashboard/internal/models"
 )
+
+// NormalizeCardUID normalizes card UID by:
+// - Removing all spaces
+// - Converting to uppercase
+// This ensures consistent storage and lookup regardless of input format
+func NormalizeCardUID(uid string) string {
+	// Remove all whitespace (spaces, tabs, newlines)
+	normalized := strings.ReplaceAll(uid, " ", "")
+	normalized = strings.ReplaceAll(normalized, "\t", "")
+	normalized = strings.ReplaceAll(normalized, "\n", "")
+	normalized = strings.ReplaceAll(normalized, "\r", "")
+	// Convert to uppercase for consistency
+	return strings.ToUpper(normalized)
+}
 
 // ==================== Challenge Management (SKUD Challenge-Response) ====================
 
@@ -78,6 +93,9 @@ func generateRandomHex(length int) string {
 // ==================== Cards ====================
 
 func (db *DB) CreateCard(ctx context.Context, card *models.Card) error {
+	// Normalize card UID before storing
+	card.CardUID = NormalizeCardUID(card.CardUID)
+
 	// Start transaction
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
@@ -139,6 +157,9 @@ func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, erro
 }
 
 func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, error) {
+	// Normalize card UID for consistent lookup
+	normalizedUID := NormalizeCardUID(cardUID)
+	
 	query := `
 		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status,
 		       COALESCE(key_version, 0), COALESCE(pending_key_update, FALSE),
@@ -146,7 +167,7 @@ func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, e
 		FROM cards WHERE card_uid = $1
 	`
 	card := &models.Card{}
-	err := db.Pool.QueryRow(ctx, query, cardUID).Scan(
+	err := db.Pool.QueryRow(ctx, query, normalizedUID).Scan(
 		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status,
 		&card.KeyVersion, &card.PendingKeyUpdate,
 		&card.CreatedAt, &card.UpdatedAt,

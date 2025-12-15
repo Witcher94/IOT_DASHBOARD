@@ -170,6 +170,10 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_cards_card_uid ON cards(card_uid)`,
 		`CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status)`,
+		// Migration: Normalize card_uid (remove spaces, uppercase) for consistent lookup
+		`UPDATE cards SET card_uid = UPPER(REPLACE(card_uid, ' ', '')) WHERE card_uid LIKE '% %' OR card_uid != UPPER(card_uid)`,
+		// Also normalize card_uid in access_logs for consistency
+		`UPDATE access_logs SET card_uid = UPPER(REPLACE(card_uid, ' ', '')) WHERE card_uid LIKE '% %' OR card_uid != UPPER(card_uid)`,
 		// Access logs indexes for fast filtering
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_created_at ON access_logs(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_card_uid ON access_logs(card_uid)`,
