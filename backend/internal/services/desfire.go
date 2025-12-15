@@ -283,6 +283,10 @@ func (s *DesfireService) ProcessAuth1Response(session *DesfireSession, encRndBHe
 	}
 	session.RndA = rndA
 	
+	// Log the challenge values for debugging
+	log.Printf("[DESFire CRYPTO] Card %s: RndB (from card) = %s", session.CardUID, hex.EncodeToString(rndB))
+	log.Printf("[DESFire CRYPTO] Card %s: RndA (server generated) = %s", session.CardUID, hex.EncodeToString(rndA))
+	
 	// Rotate RndB left by 1 byte
 	rndBrot := make([]byte, 16)
 	copy(rndBrot, rndB[1:])
@@ -354,14 +358,18 @@ func (s *DesfireService) VerifyAuth2Response(session *DesfireSession, responseHe
 	copy(expectedRndA, session.RndA[1:])
 	expectedRndA[15] = session.RndA[0]
 	
+	// Log verification details
+	log.Printf("[DESFire CRYPTO] Card %s: RndA' (from card, decrypted) = %s", session.CardUID, hex.EncodeToString(rndAResponse))
+	log.Printf("[DESFire CRYPTO] Card %s: Expected RndA' (rotated) = %s", session.CardUID, hex.EncodeToString(expectedRndA))
+	
 	// Compare
 	if !hmac.Equal(rndAResponse, expectedRndA) {
-		log.Printf("[DESFire] RndA verification FAILED for card %s - POSSIBLE CLONE!", session.CardUID)
+		log.Printf("[DESFire CRYPTO] ❌ Card %s: RndA MISMATCH - POSSIBLE CLONE!", session.CardUID)
 		return false, nil
 	}
 	
 	// Success! Card is authenticated
-	log.Printf("[DESFire] Card %s successfully authenticated!", session.CardUID)
+	log.Printf("[DESFire CRYPTO] ✓ Card %s: RndA VERIFIED - Card has correct key!", session.CardUID)
 	
 	// Generate session key (optional, for encrypted communication)
 	// SessionKey = RndA[0:4] + RndB[0:4] + RndA[12:16] + RndB[12:16]

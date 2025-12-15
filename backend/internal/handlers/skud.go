@@ -188,8 +188,11 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[SKUD AUTH] ✓ Challenge generated for device %s: %s... (expires in 30s)", device.Name, challenge[:8])
-	log.Printf("[SKUD AUTH] ════════ CHALLENGE READY - Waiting for verify request ════════")
+	log.Printf("[SKUD AUTH] ════════ DEVICE CHALLENGE GENERATED ════════")
+	log.Printf("[SKUD AUTH] Device: %s", device.Name)
+	log.Printf("[SKUD AUTH] Challenge (full): %s", challenge)
+	log.Printf("[SKUD AUTH] Expires in: 30 seconds")
+	log.Printf("[SKUD AUTH] ════════ Waiting for verify request ════════")
 
 	c.JSON(http.StatusOK, models.ChallengeResponse{
 		Challenge: challenge,
@@ -630,9 +633,11 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 		}
 
 		// Validate and consume challenge (one-time use)
-		log.Printf("[SKUD VERIFY] Step 4a: Validating challenge: %s...", req.Challenge[:min(8, len(req.Challenge))])
+		log.Printf("[SKUD VERIFY] ════════ DEVICE CHALLENGE VALIDATION ════════")
+		log.Printf("[SKUD VERIFY] Device: %s", device.Name)
+		log.Printf("[SKUD VERIFY] Challenge received: %s", req.Challenge)
 		if err := h.db.ValidateAndConsumeChallenge(c.Request.Context(), device.ID, req.Challenge); err != nil {
-			log.Printf("[SKUD VERIFY] ❌ Step 4 FAILED: Invalid/expired challenge - device=%s error=%v", device.Name, err)
+			log.Printf("[SKUD VERIFY] ❌ CHALLENGE INVALID: %v", err)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":      "Invalid or expired challenge",
 				"error_code": "INVALID_CHALLENGE",
@@ -640,7 +645,8 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 			})
 			return
 		}
-		log.Printf("[SKUD VERIFY] ✓ Step 4: Challenge validated and consumed")
+		log.Printf("[SKUD VERIFY] ✓ DEVICE CHALLENGE VERIFIED AND CONSUMED (one-time use)")
+		log.Printf("[SKUD VERIFY] ════════════════════════════════════════════")
 	} else {
 		log.Printf("[SKUD VERIFY] Step 4: Skipping challenge validation (device type: %s)", device.DeviceType)
 	}
