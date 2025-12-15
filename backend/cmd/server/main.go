@@ -223,6 +223,7 @@ func main() {
 			skudApi.POST("/desfire/start", desfireHandler.DesfireStart)      // Start DESFire auth session
 			skudApi.POST("/desfire/step", desfireHandler.DesfireStep)        // Process auth step
 			skudApi.POST("/desfire/confirm", desfireHandler.DesfireProvisionConfirm) // Confirm provisioning
+			skudApi.POST("/desfire/cancel", desfireHandler.DesfireCancel)    // Cancel session (card removed)
 		}
 	}
 

@@ -60,9 +60,22 @@ func (h *SKUDHandler) validateAndLockChipID(c *gin.Context, device *models.Devic
 	}
 
 	chipID := c.GetHeader("X-Chip-ID")
+	
+	// Log current chip_id state for debugging
+	confirmedChip := ""
+	pendingChip := ""
+	if device.ChipID != nil {
+		confirmedChip = *device.ChipID
+	}
+	if device.PendingChipID != nil {
+		pendingChip = *device.PendingChipID
+	}
+	log.Printf("[SKUD CHIP] Device: %s | Received: %s | Confirmed: %s | Pending: %s", 
+		device.Name, chipID, confirmedChip, pendingChip)
+	
 	if chipID == "" {
 		// No chip_id provided - for backwards compatibility, allow but log warning
-		log.Printf("[SKUD] WARNING: Device %s (%s) sent request without X-Chip-ID header", device.Name, device.ID)
+		log.Printf("[SKUD CHIP] ⚠ WARNING: Device %s sent request WITHOUT X-Chip-ID header!", device.Name)
 		return true, ""
 	}
 
@@ -125,9 +138,12 @@ func (h *SKUDHandler) validateAndLockChipID(c *gin.Context, device *models.Devic
 // GetChallenge generates a one-time challenge for SKUD device authentication
 // GET /access/challenge
 func (h *SKUDHandler) GetChallenge(c *gin.Context) {
+	log.Printf("[SKUD AUTH] ════════ GET CHALLENGE REQUEST ════════")
+	
 	// Authenticate device via X-Device-Token
 	device, err := h.getDeviceFromToken(c)
 	if device == nil || err != nil {
+		log.Printf("[SKUD AUTH] ❌ Challenge rejected: invalid or missing device token")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":      "Invalid or missing device token",
 			"error_code": "INVALID_DEVICE_TOKEN",
@@ -135,8 +151,11 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[SKUD AUTH] Step 1: Device authenticated: %s (type: %s)", device.Name, device.DeviceType)
+
 	// Only SKUD devices need challenges
 	if device.DeviceType != models.DeviceTypeSKUD {
+		log.Printf("[SKUD AUTH] ❌ Challenge rejected: device %s is not SKUD type", device.Name)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      "Challenge not required for this device type",
 			"error_code": "NOT_SKUD_DEVICE",
@@ -145,7 +164,10 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 	}
 
 	// Validate and lock chip_id (clone protection)
+	chipID := c.GetHeader("X-Chip-ID")
+	log.Printf("[SKUD AUTH] Step 2: Validating chip_id: %s", chipID)
 	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		log.Printf("[SKUD AUTH] ❌ Challenge rejected: chip_id mismatch - %s", errCode)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":      "Device hardware mismatch - possible clone detected",
 			"error_code": errCode,
@@ -155,18 +177,19 @@ func (h *SKUDHandler) GetChallenge(c *gin.Context) {
 
 	// Update device online status
 	if err := h.db.UpdateDeviceOnline(c.Request.Context(), device.ID, true); err != nil {
-		log.Printf("[SKUD] Failed to update device online status: %v", err)
+		log.Printf("[SKUD AUTH] Warning: Failed to update device online status: %v", err)
 	}
 
 	// Generate and store challenge
 	challenge, err := h.db.CreateChallenge(c.Request.Context(), device.ID)
 	if err != nil {
-		log.Printf("[SKUD] Failed to create challenge for device %s: %v", device.Name, err)
+		log.Printf("[SKUD AUTH] ❌ Failed to create challenge for device %s: %v", device.Name, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate challenge"})
 		return
 	}
 
-	log.Printf("[SKUD] Challenge generated for device %s", device.Name)
+	log.Printf("[SKUD AUTH] ✓ Challenge generated for device %s: %s... (expires in 30s)", device.Name, challenge[:8])
+	log.Printf("[SKUD AUTH] ════════ CHALLENGE READY - Waiting for verify request ════════")
 
 	c.JSON(http.StatusOK, models.ChallengeResponse{
 		Challenge: challenge,
@@ -548,9 +571,12 @@ func (h *SKUDHandler) UnlinkCardFromDevice(c *gin.Context) {
 // SKUD devices require challenge-response authentication
 
 func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
+	log.Printf("[SKUD VERIFY] ════════ VERIFY ACCESS REQUEST ════════")
+	
 	// Authenticate device via X-Device-Token
 	device, err := h.getDeviceFromToken(c)
 	if device == nil || err != nil {
+		log.Printf("[SKUD VERIFY] ❌ Step 1 FAILED: Invalid or missing device token")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":      "Invalid or missing device token",
 			"error_code": "INVALID_DEVICE_TOKEN",
@@ -558,9 +584,13 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 		})
 		return
 	}
+	log.Printf("[SKUD VERIFY] ✓ Step 1: Device authenticated: %s (type: %s)", device.Name, device.DeviceType)
 
 	// Validate chip_id (clone protection) - must match before processing any request
+	chipID := c.GetHeader("X-Chip-ID")
+	log.Printf("[SKUD VERIFY] Step 2: Validating chip_id: %s", chipID)
 	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		log.Printf("[SKUD VERIFY] ❌ Step 2 FAILED: chip_id mismatch - %s", errCode)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":      "Device hardware mismatch - possible clone detected",
 			"error_code": errCode,
@@ -568,19 +598,29 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 		})
 		return
 	}
+	log.Printf("[SKUD VERIFY] ✓ Step 2: Chip ID validated")
 
 	var req models.AccessVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[SKUD VERIFY] ❌ Step 3 FAILED: Invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      "Invalid request: card_uid required",
 			"error_code": "INVALID_REQUEST",
 		})
 		return
 	}
+	
+	// Log the full request for debugging
+	hasToken := req.CardToken != ""
+	hasChallenge := req.Challenge != ""
+	log.Printf("[SKUD VERIFY] ✓ Step 3: Request parsed - card_uid=%s card_type=%s has_token=%v has_challenge=%v", 
+		req.CardUID, req.CardType, hasToken, hasChallenge)
 
 	// SKUD devices require challenge-response authentication
 	if device.DeviceType == models.DeviceTypeSKUD {
+		log.Printf("[SKUD VERIFY] Step 4: Challenge-Response validation (SKUD device)")
 		if req.Challenge == "" {
+			log.Printf("[SKUD VERIFY] ❌ Step 4 FAILED: No challenge provided for SKUD device")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":      "Challenge required for SKUD devices. Call GET /access/challenge first.",
 				"error_code": "CHALLENGE_REQUIRED",
@@ -590,8 +630,9 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 		}
 
 		// Validate and consume challenge (one-time use)
+		log.Printf("[SKUD VERIFY] Step 4a: Validating challenge: %s...", req.Challenge[:min(8, len(req.Challenge))])
 		if err := h.db.ValidateAndConsumeChallenge(c.Request.Context(), device.ID, req.Challenge); err != nil {
-			log.Printf("[SKUD] Invalid challenge: device=%s error=%v", device.Name, err)
+			log.Printf("[SKUD VERIFY] ❌ Step 4 FAILED: Invalid/expired challenge - device=%s error=%v", device.Name, err)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":      "Invalid or expired challenge",
 				"error_code": "INVALID_CHALLENGE",
@@ -599,23 +640,32 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 			})
 			return
 		}
+		log.Printf("[SKUD VERIFY] ✓ Step 4: Challenge validated and consumed")
+	} else {
+		log.Printf("[SKUD VERIFY] Step 4: Skipping challenge validation (device type: %s)", device.DeviceType)
 	}
 
 	deviceName := device.Name
 
 	// Get card
+	log.Printf("[SKUD VERIFY] Step 5: Looking up card in database: %s", req.CardUID)
 	card, err := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
 	if err != nil {
-		log.Printf("[SKUD] Card not found: %s", req.CardUID)
+		log.Printf("[SKUD VERIFY] ❌ Step 5 FAILED: Card not found in database: %s", req.CardUID)
 		h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "not_found", false)
 		c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
 		return
 	}
+	log.Printf("[SKUD VERIFY] ✓ Step 5: Card found - id=%s status=%s type=%s name=%s", 
+		card.ID, card.Status, card.CardType, card.Name)
 
 	// Check if card is active and linked to this device
 	linkedToDevice, _ := h.db.IsCardLinkedToDevice(c.Request.Context(), card.ID, device.ID)
 	allowed := card.Status == models.CardStatusActive && linkedToDevice
 	tokenUpdated := false
+	
+	log.Printf("[SKUD VERIFY] Step 6: Access check - status=%s linked=%v → allowed=%v", 
+		card.Status, linkedToDevice, allowed)
 
 	// Token verification ONLY for SKUD devices
 	// Gateway and other devices use simple UID-based verification
@@ -624,37 +674,44 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 		isDESFire := req.CardType == "MIFARE_DESFIRE" || req.CardType == "DESFIRE" ||
 			card.CardType == "MIFARE_DESFIRE" || card.CardType == "DESFIRE"
 
+		log.Printf("[SKUD VERIFY] Step 7: Token verification - isDESFire=%v has_token=%v", isDESFire, hasToken)
+
 		if isDESFire {
 			// DESFire cards REQUIRE token authentication on SKUD devices
 			if req.CardToken == "" {
-				log.Printf("[SKUD] DESFire card requires token: device=%s card=%s", deviceName, req.CardUID)
+				log.Printf("[SKUD VERIFY] ❌ Step 7 FAILED: DESFire card requires token but none provided - device=%s card=%s", deviceName, req.CardUID)
 				h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "token_required", false)
 				c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
 				return
 			}
 
+			log.Printf("[SKUD VERIFY] Step 7a: Verifying DESFire token: %s...", req.CardToken[:min(8, len(req.CardToken))])
 			tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
 			if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
-				log.Printf("[SKUD] DESFire token verification failed: device=%s card=%s", deviceName, req.CardUID)
+				log.Printf("[SKUD VERIFY] ❌ Step 7 FAILED: DESFire token verification failed - device=%s card=%s token_err=%v token_match=%v", 
+					deviceName, req.CardUID, err, tokenCard != nil && tokenCard.ID == card.ID)
 				h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
 				c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
 				return
 			}
+			log.Printf("[SKUD VERIFY] ✓ Step 7: DESFire token verified - is_current=%v", isCurrent)
 
 			// If old token was used successfully, promote it (rotate completed)
 			if !isCurrent {
+				log.Printf("[SKUD VERIFY] Step 7b: Promoting old token to current (rotation complete)")
 				if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
-					log.Printf("[SKUD] Failed to promote token: %v", err)
+					log.Printf("[SKUD VERIFY] Warning: Failed to promote token: %v", err)
 				} else {
-					log.Printf("[SKUD] Old token promoted to current for card %s", req.CardUID)
+					log.Printf("[SKUD VERIFY] ✓ Token promoted to current for card %s", req.CardUID)
 					tokenUpdated = true
 				}
 			}
 		} else if req.CardToken != "" {
 			// Optional token verification for non-DESFire cards on SKUD devices
+			log.Printf("[SKUD VERIFY] Step 7: Verifying non-DESFire card token")
 			tokenCard, isCurrent, err := h.db.GetCardByToken(c.Request.Context(), req.CardToken)
 			if err != nil || tokenCard == nil || tokenCard.ID != card.ID {
-				log.Printf("[SKUD] Card token verification failed: device=%s card=%s", deviceName, req.CardUID)
+				log.Printf("[SKUD VERIFY] ❌ Step 7 FAILED: Card token verification failed - device=%s card=%s", deviceName, req.CardUID)
 				h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", "invalid_token", false)
 				c.JSON(http.StatusOK, models.AccessVerifyResponse{Access: false})
 				return
@@ -662,17 +719,22 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 
 			if !isCurrent {
 				if err := h.db.PromoteCardToken(c.Request.Context(), req.CardToken); err != nil {
-					log.Printf("[SKUD] Failed to promote token: %v", err)
+					log.Printf("[SKUD VERIFY] Warning: Failed to promote token: %v", err)
 				} else {
+					log.Printf("[SKUD VERIFY] ✓ Token promoted for non-DESFire card %s", req.CardUID)
 					tokenUpdated = true
 				}
 			}
+		} else {
+			log.Printf("[SKUD VERIFY] Step 7: Skipping token verification (not DESFire and no token provided)")
 		}
+	} else if device.DeviceType != models.DeviceTypeSKUD {
+		log.Printf("[SKUD VERIFY] Step 7: Skipping token verification (non-SKUD device: %s)", device.DeviceType)
 	}
-	// For non-SKUD devices (gateway, simple) - no token verification needed
 
-	log.Printf("[SKUD] Verify: device=%s card=%s status=%s linked=%v allowed=%v tokenUpdated=%v",
-		deviceName, req.CardUID, card.Status, linkedToDevice, allowed, tokenUpdated)
+	log.Printf("[SKUD VERIFY] ════════ RESULT: access=%v tokenUpdated=%v ════════", allowed, tokenUpdated)
+	log.Printf("[SKUD VERIFY] Summary: device=%s card=%s (%s) status=%s linked=%v → ACCESS %s",
+		deviceName, req.CardUID, card.CardType, card.Status, linkedToDevice, map[bool]string{true: "✓ GRANTED", false: "✗ DENIED"}[allowed])
 
 	h.logAccess(c, deviceName, req.CardUID, req.CardType, "verify", card.Status, allowed)
 
@@ -690,18 +752,23 @@ func (h *SKUDHandler) VerifyAccess(c *gin.Context) {
 }
 
 func (h *SKUDHandler) RegisterCard(c *gin.Context) {
+	log.Printf("[SKUD REGISTER] ════════ REGISTER CARD REQUEST ════════")
+	
 	// Authenticate device via X-Device-Token
 	device, err := h.getDeviceFromToken(c)
 	if device == nil || err != nil {
+		log.Printf("[SKUD REGISTER] ❌ Device auth failed: invalid or missing token")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":      "Invalid or missing device token",
 			"error_code": "INVALID_DEVICE_TOKEN",
 		})
 		return
 	}
+	log.Printf("[SKUD REGISTER] ✓ Device authenticated: %s", device.Name)
 
 	// Validate chip_id (clone protection) - must match before processing any request
 	if valid, errCode := h.validateAndLockChipID(c, device); !valid {
+		log.Printf("[SKUD REGISTER] ❌ Chip ID validation failed: %s", errCode)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":      "Device hardware mismatch - possible clone detected",
 			"error_code": errCode,
@@ -711,16 +778,20 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 
 	var req models.AccessRegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[SKUD REGISTER] ❌ Invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      "Invalid request: card_uid required",
 			"error_code": "INVALID_REQUEST",
 		})
 		return
 	}
+	log.Printf("[SKUD REGISTER] ✓ Request parsed: card_uid=%s card_type=%s", req.CardUID, req.CardType)
 
 	// SKUD devices require challenge-response authentication
 	if device.DeviceType == models.DeviceTypeSKUD {
+		log.Printf("[SKUD REGISTER] Validating challenge for SKUD device...")
 		if req.Challenge == "" {
+			log.Printf("[SKUD REGISTER] ❌ No challenge provided for SKUD device")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":      "Challenge required for SKUD devices. Call GET /access/challenge first.",
 				"error_code": "CHALLENGE_REQUIRED",
@@ -730,40 +801,47 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 
 		// Validate and consume challenge (one-time use)
 		if err := h.db.ValidateAndConsumeChallenge(c.Request.Context(), device.ID, req.Challenge); err != nil {
-			log.Printf("[SKUD] Invalid challenge: device=%s error=%v", device.Name, err)
+			log.Printf("[SKUD REGISTER] ❌ Invalid/expired challenge: device=%s error=%v", device.Name, err)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":      "Invalid or expired challenge",
 				"error_code": "INVALID_CHALLENGE",
 			})
 			return
 		}
+		log.Printf("[SKUD REGISTER] ✓ Challenge validated and consumed")
 	}
 
 	deviceName := device.Name
 
 	// Check if card exists
+	log.Printf("[SKUD REGISTER] Looking up card in database: %s", req.CardUID)
 	card, err := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
 	if err != nil {
 		// Create new card as pending with card type
+		log.Printf("[SKUD REGISTER] Card not found - creating new card as PENDING")
 		card = &models.Card{
 			CardUID:  req.CardUID,
 			CardType: req.CardType,
 			Status:   models.CardStatusPending,
 		}
 		if err := h.db.CreateCard(c.Request.Context(), card); err != nil {
+			log.Printf("[SKUD REGISTER] ❌ Failed to create card: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		log.Printf("[SKUD] New card created as pending: %s (type: %s)", req.CardUID, req.CardType)
+		log.Printf("[SKUD REGISTER] ✓ NEW CARD created as pending: %s (type: %s)", req.CardUID, req.CardType)
 		
 		// Broadcast new card to WebSocket clients
 		createdCard, _ := h.db.GetCardByUID(c.Request.Context(), req.CardUID)
 		if createdCard != nil {
 			h.hub.BroadcastCardUpdate("created", createdCard)
+			log.Printf("[SKUD REGISTER] ✓ Card update broadcast to WebSocket clients")
 		}
 	} else {
 		// Card exists
+		log.Printf("[SKUD REGISTER] Card already exists in database: status=%s", card.Status)
 		if card.Status == models.CardStatusPending {
+			log.Printf("[SKUD REGISTER] Card is already pending - returning conflict")
 			c.JSON(http.StatusConflict, gin.H{
 				"error":      "Card is already pending approval",
 				"error_code": "CARD_PENDING",
@@ -775,14 +853,20 @@ func (h *SKUDHandler) RegisterCard(c *gin.Context) {
 	// Link card to device if not already linked
 	linked, _ := h.db.IsCardLinkedToDevice(c.Request.Context(), card.ID, device.ID)
 	if !linked {
+		log.Printf("[SKUD REGISTER] Linking card to device %s...", device.Name)
 		if err := h.db.LinkCardToDevice(c.Request.Context(), card.ID, device.ID); err != nil {
-			log.Printf("[SKUD] Failed to link card to device: %v", err)
+			log.Printf("[SKUD REGISTER] ⚠ Failed to link card to device: %v", err)
+		} else {
+			log.Printf("[SKUD REGISTER] ✓ Card linked to device")
 		}
+	} else {
+		log.Printf("[SKUD REGISTER] Card already linked to device")
 	}
 
 	h.logAccess(c, deviceName, req.CardUID, req.CardType, "register", card.Status, false)
 
-	log.Printf("[SKUD] Register: device=%s card=%s status=%s", deviceName, req.CardUID, card.Status)
+	log.Printf("[SKUD REGISTER] ════════ REGISTRATION COMPLETE: card=%s status=%s device=%s ════════", 
+		req.CardUID, card.Status, deviceName)
 	c.JSON(http.StatusAccepted, models.AccessRegisterResponse{Status: card.Status})
 }
 
