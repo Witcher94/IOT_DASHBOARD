@@ -127,6 +127,7 @@ export interface Card {
   status: CardStatus;
   token?: string; // Authentication token (only shown on detail page)
   key_version?: number; // DESFire: current key version
+  last_counter?: number; // DESFire: Transaction Counter for clone protection
   pending_key_update?: boolean; // DESFire: key update scheduled
   devices?: DeviceBrief[];
   created_at: string;

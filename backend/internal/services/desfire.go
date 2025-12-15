@@ -22,18 +22,23 @@ const (
 	DesfireStateSelectApp  = "select_app"
 	DesfireStateAuth1      = "auth1"
 	DesfireStateAuth2      = "auth2"
-	DesfireStateKeyUpdate  = "key_update" // After auth, updating key on card
-	DesfireStateComplete   = "complete"
-	DesfireStateFailed     = "failed"
+	DesfireStateKeyUpdate        = "key_update" // After auth, updating key on card
+	DesfireStateReadCounter      = "read_counter"      // New: Read Value File
+	DesfireStateIncrementCounter = "increment_counter" // New: Increment Value
+	DesfireStateCommit           = "commit"            // New: Commit Transaction
+	DesfireStateComplete         = "complete"
+	DesfireStateFailed           = "failed"
 	
 	// Provisioning states
 	DesfireStateProvSelectPicc    = "prov_select_picc"
 	DesfireStateProvAuthPicc1     = "prov_auth_picc_1"
 	DesfireStateProvAuthPicc2     = "prov_auth_picc_2"
 	DesfireStateProvCreateApp     = "prov_create_app"
+	DesfireStateProvDeleteApp     = "prov_delete_app"  // Delete existing app before recreating
 	DesfireStateProvSelectApp     = "prov_select_app"
 	DesfireStateProvAuthApp1      = "prov_auth_app_1"
 	DesfireStateProvAuthApp2      = "prov_auth_app_2"
+	DesfireStateProvCreateValueFile = "prov_create_value_file" // New: Create Value File
 	DesfireStateProvChangeKey     = "prov_change_key"
 	DesfireStateProvComplete      = "prov_complete"
 )
@@ -45,7 +50,12 @@ const (
 	DesfireCmdAuth1       = "AUTH_PART1"
 	DesfireCmdAuth2       = "AUTH_PART2"
 	DesfireCmdCreateApp   = "CREATE_APP"
+	DesfireCmdDeleteApp   = "DELETE_APP"
 	DesfireCmdChangeKey   = "CHANGE_KEY"
+	DesfireCmdGetValue    = "GET_VALUE"
+	DesfireCmdCredit      = "CREDIT"
+	DesfireCmdCommit      = "COMMIT"
+	DesfireCmdCreateValue = "CREATE_VALUE_FILE"
 )
 
 // Default DESFire key (all zeros) for new cards
@@ -530,17 +540,64 @@ func (s *DesfireService) ProcessProvisioningStep(session *DesfireSession, respon
 		return s.buildCreateAppCommand(), "continue", nil
 		
 	case DesfireStateProvCreateApp:
-		// Check result - OK (0x00) or already exists (0x91DE)
+		// Check result:
+		// - 0x00 = success
+		// - 0xDE = Duplicate Error (application already exists) - single byte
+		// - 0x91DE = Duplicate Error (two bytes, legacy format)
 		if len(response) >= 1 && response[0] == 0x00 {
 			log.Printf("[DESFire Prov] Application created successfully")
-		} else if len(response) >= 2 && response[0] == 0x91 && response[1] == 0xDE {
-			log.Printf("[DESFire Prov] Application already exists")
-		} else {
-			return nil, "error", fmt.Errorf("create app failed: %s", responseHex)
+			// Select our application
+			session.State = DesfireStateProvSelectApp
+			return s.BuildSelectAppCommand(), "continue", nil
 		}
-		// Select our application
-		session.State = DesfireStateProvSelectApp
-		return s.BuildSelectAppCommand(), "continue", nil
+		
+		// Handle duplicate error - app already exists, need to delete and recreate
+		isDuplicate := false
+		if len(response) >= 1 && response[0] == 0xDE {
+			// Single byte 0xDE = Duplicate Error
+			isDuplicate = true
+		} else if len(response) >= 2 && response[0] == 0x91 && response[1] == 0xDE {
+			// Two bytes 0x91 0xDE = Duplicate Error (legacy/wrapped format)
+			isDuplicate = true
+		}
+		
+		if isDuplicate {
+			log.Printf("[DESFire Prov] ⚠️ Application already exists (0xDE) - deleting and recreating...")
+			// Send DeleteApplication command, then recreate
+			session.State = DesfireStateProvDeleteApp
+			return s.buildDeleteAppCommand(), "continue", nil
+		}
+		
+		return nil, "error", fmt.Errorf("create app failed: %s", responseHex)
+	
+	case DesfireStateProvDeleteApp:
+		// Check result of DeleteApplication
+		// 0x00 = success, 0xA0 = Application not found (already deleted, ok)
+		if len(response) >= 1 && (response[0] == 0x00 || response[0] == 0xA0) {
+			if response[0] == 0x00 {
+				log.Printf("[DESFire Prov] ✓ Old application deleted successfully")
+			} else {
+				log.Printf("[DESFire Prov] Application was not found (0xA0) - continuing anyway")
+			}
+			// Now recreate the application
+			log.Printf("[DESFire Prov] → Recreating application...")
+			session.State = DesfireStateProvCreateApp
+			return s.buildCreateAppCommand(), "continue", nil
+		}
+		
+		// Handle common errors
+		errCode := ""
+		if len(response) >= 1 {
+			switch response[0] {
+			case 0xAE:
+				errCode = "authentication_error"
+			case 0x9D:
+				errCode = "permission_denied"
+			default:
+				errCode = fmt.Sprintf("0x%02X", response[0])
+			}
+		}
+		return nil, "error", fmt.Errorf("delete app failed: %s (response: %s)", errCode, responseHex)
 		
 	case DesfireStateProvSelectApp:
 		if len(response) == 0 || response[0] != 0x00 {
@@ -579,14 +636,24 @@ func (s *DesfireService) ProcessProvisioningStep(session *DesfireSession, respon
 		if !verified {
 			return nil, "error", errors.New("app authentication failed")
 		}
-		// App authenticated with session key - now change the key!
-		session.State = DesfireStateProvChangeKey
-		cmd, err := s.buildChangeKeyCommand(session)
-		if err != nil {
-			return nil, "error", err
-		}
-		return cmd, "continue", nil
+		// App authenticated with session key. Now create Value File for Counter
+		session.State = DesfireStateProvCreateValueFile
+		return s.buildCreateValueFileCommand(), "continue", nil
 		
+	case DesfireStateProvCreateValueFile:
+		// Check result: 0x00 = success
+		if len(response) >= 1 && response[0] == 0x00 {
+			log.Printf("[DESFire Prov] Value File created successfully")
+			// Value File created. Now change the key!
+			session.State = DesfireStateProvChangeKey
+			cmd, err := s.buildChangeKeyCommand(session)
+			if err != nil {
+				return nil, "error", err
+			}
+			return cmd, "continue", nil
+		}
+		return nil, "error", fmt.Errorf("create value file failed: %s", responseHex)
+
 	case DesfireStateProvChangeKey:
 		if len(response) >= 1 && response[0] == 0x00 {
 			log.Printf("[DESFire Prov] KEY WRITTEN SUCCESSFULLY for card %s!", session.CardUID)
@@ -714,6 +781,98 @@ func (s *DesfireService) buildCreateAppCommand() *DesfireCommand {
 	cmd = append(cmd, 0x0F, 0x81)
 	return &DesfireCommand{
 		Type: DesfireCmdCreateApp,
+		Data: hex.EncodeToString(cmd),
+	}
+}
+
+// buildCreateValueFileCommand builds the CreateValueFile command (File ID 0x01)
+func (s *DesfireService) buildCreateValueFileCommand() *DesfireCommand {
+	// CreateValueFile: 0xCC + FileNo(1) + CommSet(1) + AccessRights(2) + Lower(4) + Upper(4) + Value(4) + Enabled(1)
+	// CommSet: 0x01 (MACed) - using MACed for now as Enciphered (0x03) requires complex crypto response handling
+	// AccessRights: 0x0000 (Key 0 for all ops)
+	
+	cmd := []byte{0xCC, 0x01} // File ID 0x01
+	cmd = append(cmd, 0x01) // CommSettings: MACed communication (easier to implement than Enciphered for now)
+	cmd = append(cmd, 0x00, 0x00) // AccessRights: Key 0 for all ops
+	
+	// Lower Limit (0) - Little Endian
+	cmd = append(cmd, 0x00, 0x00, 0x00, 0x00)
+	// Upper Limit (1,000,000) - Little Endian
+	cmd = append(cmd, 0x40, 0x42, 0x0F, 0x00)
+	// Initial Value (0) - Little Endian
+	cmd = append(cmd, 0x00, 0x00, 0x00, 0x00)
+	// Limited Credit Enabled (0 = No)
+	cmd = append(cmd, 0x00)
+	
+	return &DesfireCommand{
+		Type: DesfireCmdCreateValue,
+		Data: hex.EncodeToString(cmd),
+	}
+}
+
+// BuildGetValueCommand builds the GetValue command
+func (s *DesfireService) BuildGetValueCommand() *DesfireCommand {
+	// GetValue: 0x6C + FileNo(1)
+	return &DesfireCommand{
+		Type: DesfireCmdGetValue,
+		Data: hex.EncodeToString([]byte{0x6C, 0x01}),
+	}
+}
+
+// BuildCreditCommand builds the Credit command (Increment)
+func (s *DesfireService) BuildCreditCommand(amount int) *DesfireCommand {
+	// Credit: 0x0C + FileNo(1) + Amount(4, LSB)
+	cmd := []byte{0x0C, 0x01}
+	
+	// Amount (Little Endian)
+	cmd = append(cmd, byte(amount&0xFF))
+	cmd = append(cmd, byte((amount>>8)&0xFF))
+	cmd = append(cmd, byte((amount>>16)&0xFF))
+	cmd = append(cmd, byte((amount>>24)&0xFF))
+	
+	return &DesfireCommand{
+		Type: DesfireCmdCredit,
+		Data: hex.EncodeToString(cmd),
+	}
+}
+
+// BuildCommitCommand builds the CommitTransaction command
+func (s *DesfireService) BuildCommitCommand() *DesfireCommand {
+	// CommitTransaction: 0xC7
+	return &DesfireCommand{
+		Type: DesfireCmdCommit,
+		Data: hex.EncodeToString([]byte{0xC7}),
+	}
+}
+
+// ParseValueResponse parses the response from GetValue command
+func (s *DesfireService) ParseValueResponse(responseHex string) (int, error) {
+	// Response: Value (4 bytes, Little Endian) + Status (1 byte)? No, usually just Value if OK.
+	// If CommSet was MACed (0x01), response is Value(4) + MAC(4/8)
+	// For simplicity, we just take the first 4 bytes as value.
+	
+	data, err := hex.DecodeString(responseHex)
+	if err != nil {
+		return 0, err
+	}
+	
+	if len(data) < 4 {
+		return 0, fmt.Errorf("response too short: %d", len(data))
+	}
+	
+	// Parse Little Endian int
+	value := int(data[0]) | int(data[1])<<8 | int(data[2])<<16 | int(data[3])<<24
+	return value, nil
+}
+
+// buildDeleteAppCommand builds the DeleteApplication command
+// Used when an application already exists and needs to be recreated
+func (s *DesfireService) buildDeleteAppCommand() *DesfireCommand {
+	// DeleteApp: 0xDA + AID(3, LSB first)
+	cmd := []byte{0xDA}
+	cmd = append(cmd, s.appID...)
+	return &DesfireCommand{
+		Type: DesfireCmdDeleteApp,
 		Data: hex.EncodeToString(cmd),
 	}
 }

@@ -200,6 +200,8 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS card_type VARCHAR(64) DEFAULT ''`,
 		// Pending chip_id for device clone protection (awaiting user confirmation)
 		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS pending_chip_id VARCHAR(64)`,
+		// DESFire Transaction Counter for clone protection
+		`ALTER TABLE cards ADD COLUMN IF NOT EXISTS last_counter INTEGER DEFAULT 0`,
 	}
 
 	for _, migration := range migrations {

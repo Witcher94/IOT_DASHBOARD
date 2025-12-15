@@ -267,6 +267,7 @@ type Card struct {
 	Status           string        `json:"status"`    // pending, active, disabled
 	Token            string        `json:"token,omitempty"` // Current auth token (only shown to owner)
 	KeyVersion       int           `json:"key_version"`        // DESFire: key version for rotation (0 = initial)
+	LastCounter      int           `json:"last_counter"`       // DESFire: Transaction Counter for clone protection
 	PendingKeyUpdate bool          `json:"pending_key_update"` // DESFire: needs key update on next auth
 	Devices          []DeviceBrief `json:"devices,omitempty"`
 	CreatedAt        time.Time     `json:"created_at"`

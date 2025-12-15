@@ -132,14 +132,14 @@ func (db *DB) CreateCard(ctx context.Context, card *models.Card) error {
 func (db *DB) GetCardByID(ctx context.Context, id uuid.UUID) (*models.Card, error) {
 	query := `
 		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status, 
-		       COALESCE(key_version, 0), COALESCE(pending_key_update, FALSE),
+		       COALESCE(key_version, 0), COALESCE(last_counter, 0), COALESCE(pending_key_update, FALSE),
 		       created_at, updated_at
 		FROM cards WHERE id = $1
 	`
 	card := &models.Card{}
 	err := db.Pool.QueryRow(ctx, query, id).Scan(
 		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status,
-		&card.KeyVersion, &card.PendingKeyUpdate,
+		&card.KeyVersion, &card.LastCounter, &card.PendingKeyUpdate,
 		&card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
@@ -162,14 +162,14 @@ func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, e
 	
 	query := `
 		SELECT id, card_uid, COALESCE(card_type, ''), COALESCE(name, ''), status,
-		       COALESCE(key_version, 0), COALESCE(pending_key_update, FALSE),
+		       COALESCE(key_version, 0), COALESCE(last_counter, 0), COALESCE(pending_key_update, FALSE),
 		       created_at, updated_at
 		FROM cards WHERE card_uid = $1
 	`
 	card := &models.Card{}
 	err := db.Pool.QueryRow(ctx, query, normalizedUID).Scan(
 		&card.ID, &card.CardUID, &card.CardType, &card.Name, &card.Status,
-		&card.KeyVersion, &card.PendingKeyUpdate,
+		&card.KeyVersion, &card.LastCounter, &card.PendingKeyUpdate,
 		&card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
@@ -184,6 +184,13 @@ func (db *DB) GetCardByUID(ctx context.Context, cardUID string) (*models.Card, e
 	card.Devices = devices
 
 	return card, nil
+}
+
+// UpdateCardCounter updates the transaction counter for a card
+func (db *DB) UpdateCardCounter(ctx context.Context, id uuid.UUID, counter int) error {
+	query := `UPDATE cards SET last_counter = $2, updated_at = NOW() WHERE id = $1`
+	_, err := db.Pool.Exec(ctx, query, id, counter)
+	return err
 }
 
 func (db *DB) GetAllCards(ctx context.Context) ([]models.Card, error) {

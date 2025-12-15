@@ -430,8 +430,14 @@ export default function CardDetail() {
                 <p className="text-xs text-dark-400">Версія ключа</p>
                 <p className="text-lg font-bold text-emerald-400">v{card.key_version || 0}</p>
               </div>
+              
+              <div className="border-l border-dark-600 pl-4">
+                <p className="text-xs text-dark-400">Лічильник (ATC)</p>
+                <p className="text-lg font-bold text-blue-400">{card.last_counter || 0}</p>
+              </div>
+
               {card.pending_key_update && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 ml-auto">
                   <AlertTriangle className="w-4 h-4 text-amber-400" />
                   <span className="text-sm text-amber-300">Очікує оновлення</span>
                 </div>
